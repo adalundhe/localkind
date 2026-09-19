@@ -1,0 +1,22 @@
+# Every hyper-light workload lives in this project. It may only deploy charts that Concourse
+# published to our Docker Hub namespace, and only into this cluster.
+# __DOCKER_USER__ is substituted from env.sh by scripts/30-argocd.sh.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: hyper-light
+  namespace: argocd
+spec:
+  description: Workloads built by Concourse from github.com/hyper-light
+  sourceRepos:
+  - registry-1.docker.io/__DOCKER_USER__
+  destinations:
+  - name: in-cluster
+    server: https://kubernetes.default.svc
+    namespace: "*"
+  clusterResourceWhitelist:
+  - group: ""
+    kind: Namespace
+  namespaceResourceWhitelist:
+  - group: "*"
+    kind: "*"

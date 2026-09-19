@@ -1,0 +1,23 @@
+# Packages + pushes a Helm chart to Docker Hub (OCI). See ci/scripts/publish-chart.sh.
+platform: linux
+
+image_resource:
+  type: registry-image
+  source: {repository: alpine, tag: "3.22"}
+
+inputs:
+- name: localkind
+- name: repo
+- name: version
+
+params:
+  CHART_PATH:
+  CHART_NAME:
+  VALUES_EXPR:
+  IMAGE_REPOSITORY:
+  REGISTRY_NAMESPACE:
+  REGISTRY_USERNAME:
+  REGISTRY_PASSWORD:
+
+run:
+  path: localkind/ci/scripts/publish-chart.sh

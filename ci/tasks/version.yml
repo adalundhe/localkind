@@ -1,0 +1,20 @@
+# Computes the version shared by the image and the chart. See ci/scripts/version.sh.
+platform: linux
+
+image_resource:
+  type: registry-image
+  source: {repository: alpine, tag: "3.22"}
+
+inputs:
+- name: localkind
+- name: repo
+
+outputs:
+- name: version
+
+params:
+  VERSION_FILE:      # required, e.g. Cargo.toml
+  SOURCE_URL: ""     # optional, recorded as an OCI label
+
+run:
+  path: localkind/ci/scripts/version.sh

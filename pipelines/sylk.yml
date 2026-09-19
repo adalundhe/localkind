@@ -1,0 +1,71 @@
+# hyper-light/sylk — Go (cgo: go-sqlite3 + tree-sitter bindings). CI only.
+# Mirrors .github/workflows/build.yml `verify` for linux/arm64: go vet, then go test.
+# Not ported: the release half (tags + GitHub Releases need a write token; see README).
+#
+# The repo is ~500 MB, so it is cloned shallow.
+
+resources:
+- name: repo
+  type: git
+  icon: github
+  check_every: 2m
+  source:
+    uri: https://github.com/hyper-light/sylk.git
+    branch: main
+
+jobs:
+- name: vet
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+    params: {depth: 1}
+  - task: go-vet
+    timeout: 45m
+    config: &go-task
+      platform: linux
+      image_resource:
+        type: registry-image
+        source: {repository: golang, tag: "1.25"}   # go.mod: go 1.25.0
+      inputs:
+      - name: repo
+      caches:
+      - path: go-build-cache
+      - path: go-mod-cache
+      params:
+        CGO_ENABLED: "1"
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export GOCACHE="$PWD/go-build-cache" GOMODCACHE="$PWD/go-mod-cache" GOFLAGS=-buildvcs=false
+          # Same packages upstream installs on Linux runners.
+          apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+            build-essential pkg-config libfuse-dev libfuse3-dev >/dev/null
+          cd repo
+          set -x
+          go vet ./...
+
+- name: test
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+    params: {depth: 1}
+  - task: go-test
+    timeout: 1h30m
+    config:
+      <<: *go-task
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export GOCACHE="$PWD/go-build-cache" GOMODCACHE="$PWD/go-mod-cache" GOFLAGS=-buildvcs=false
+          apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+            build-essential pkg-config libfuse-dev libfuse3-dev >/dev/null
+          cd repo
+          set -x
+          # Sandbox tests skip themselves when bwrap is unavailable (it is, in a task container).
+          go test ./...

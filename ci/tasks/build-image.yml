@@ -1,0 +1,32 @@
+# Builds an OCI image with BuildKit (concourse/oci-build-task). The step using this task must set
+# `privileged: true`. Produces image/image.tar for a `put` to a registry-image resource.
+#
+# Builds for the worker's own architecture (linux/arm64 on Apple Silicon). To publish multi-arch
+# images set IMAGE_PLATFORM to e.g. "linux/amd64,linux/arm64" and OUTPUT_OCI to "true", then
+# `put` image/image instead of image/image.tar — the foreign architecture is emulated and slow.
+platform: linux
+
+image_resource:
+  type: registry-image
+  source: {repository: concourse/oci-build-task}
+
+inputs:
+- name: repo
+- name: version
+
+outputs:
+- name: image
+
+caches:
+- path: cache
+
+params:
+  CONTEXT: repo
+  DOCKERFILE: repo/Dockerfile
+  LABELS_FILE: version/labels
+  IMAGE_PLATFORM: ""
+  OUTPUT_OCI: "false"
+  UNPACK_ROOTFS: "false"
+
+run:
+  path: build

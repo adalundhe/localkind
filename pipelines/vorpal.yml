@@ -1,0 +1,71 @@
+# hyper-light/vorpal — Rust workspace (+ Python/Node bindings). CI only: no image, no chart.
+#
+# Mirrors .github/workflows/ci.yml `test`. Upstream deliberately has no fmt gate, so neither does
+# this. Not ported: `encoder-x86` (benchmarks AVX2/AVX-512 kernels; meaningless on arm64).
+# Heaviest build in the org: 581 crates, 48 vendored tree-sitter grammars (C/C++), jemalloc.
+
+resources:
+- name: repo
+  type: git
+  icon: github
+  check_every: 2m
+  source:
+    uri: https://github.com/hyper-light/vorpal.git
+    branch: main
+
+jobs:
+- name: lint
+  serial_groups: [cargo]
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+  - task: lint
+    timeout: 1h
+    config: &rust-task          # shared by the test job below (it overrides `run`)
+      platform: linux
+      image_resource:
+        type: registry-image
+        source: {repository: rust, tag: "1.98.0"}   # == rust-toolchain.toml channel
+      inputs:
+      - name: repo
+      caches:
+      - path: cargo-home
+      - path: target
+      params:
+        CARGO_TERM_COLOR: always
+        # .cargo/config.toml names the linker `aarch64-linux-gnu-gcc`; plain `cc` is always there.
+        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: cc
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export CARGO_HOME="$PWD/cargo-home" CARGO_TARGET_DIR="$PWD/target"
+          # python3: pyo3's build script. g++/make (tree-sitter C++ scanners, jemalloc) ship in the image.
+          apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 python3-dev >/dev/null
+          cd repo
+          set -x
+          cargo clippy --workspace --all-targets -- -D warnings
+          cargo clippy -p vorpal-py --features python --all-targets -- -D warnings
+
+- name: test
+  serial_groups: [cargo]
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+  - task: test
+    timeout: 1h30m
+    config:
+      <<: *rust-task
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export CARGO_HOME="$PWD/cargo-home" CARGO_TARGET_DIR="$PWD/target"
+          apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 python3-dev >/dev/null
+          cd repo
+          set -x
+          cargo test --workspace

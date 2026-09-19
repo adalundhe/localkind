@@ -1,0 +1,111 @@
+# Helm values for concourse/concourse (chart 20.3.0, Concourse 8.3.0) on Docker Desktop's
+# kind-provisioned cluster. Installed by scripts/20-concourse.sh.
+#
+# Nothing secret lives here:
+#   - keys + admin login come from Secrets created by scripts/10-concourse-secrets.sh
+#   - the Postgres password is injected at install time from the concourse-db Secret
+
+imageTag: "8.3.0"
+
+secrets:
+  # The chart's built-in defaults are a well-known `test:test` login and published signing keys.
+  # We supply our own <release>-web / <release>-worker Secrets instead.
+  create: false
+
+concourse:
+  web:
+    clusterName: hyper-light
+    # Docker Desktop publishes LoadBalancer Services on localhost, so this URL is stable and
+    # needs no port-forward. Must match the Service port (bindPort) below.
+    externalUrl: http://localhost:8080
+    bindPort: 8080
+
+    localAuth:
+      enabled: true
+    auth:
+      mainTeam:
+        localUser: "admin"
+
+    # Pipelines use the Docker Hub token in shell steps (helm registry login); make sure a
+    # sloppy `set -x` can never print it into a build log.
+    enableRedactSecrets: true
+    enableAcrossStep: true
+    enablePipelineInstances: true
+
+    # Global throttle. Unpausing everything at once queues ~17 jobs; without a cap they all start
+    # together and several fat-LTO Rust links share one worker's 24Gi. Tasks beyond the cap wait
+    # ("all workers are busy"). Filter by the cap first, then prefer the worker that already has
+    # the inputs/caches.
+    containerPlacementStrategies:
+      - limit-active-tasks
+      - volume-locality
+    limitActiveTasks: 3
+
+    # Keep the database small on a laptop.
+    defaultBuildLogsToRetain: 50
+    maxBuildLogsToRetain: 200
+
+    # Pipeline credentials: ((docker.password)) resolves to key `password` of Secret `docker`
+    # in namespace "<release>-<team>" = concourse-main. The chart creates that namespace and
+    # the RoleBinding that lets the web node read Secrets in it (and nowhere else).
+    kubernetes:
+      enabled: true
+      teams:
+        - main
+      createTeamNamespaces: true
+      keepNamespaces: true
+
+  worker:
+    runtime: containerd
+    baggageclaim:
+      # The work dir is a local-path PVC, i.e. a plain ext4 directory on the kind node (the
+      # node's /var is a Docker volume, not overlayfs), so overlay-on-top works.
+      driver: overlay
+
+web:
+  replicas: 1
+  service:
+    api:
+      type: LoadBalancer
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+
+worker:
+  replicas: 2
+  # Builds run *inside* the worker pod's cgroup, so these limits cap all concurrent CI work on a
+  # worker. 2 workers x 8 CPU leaves headroom on the 18-CPU Docker Desktop VM for the workloads
+  # Argo CD deploys. Rust link steps are memory-hungry; don't go much lower than this.
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "8"
+      memory: 24Gi
+  # Spread workers across kind nodes when possible (soft: they all share one VM anyway).
+  hardAntiAffinity: false
+  terminationGracePeriodSeconds: 60
+
+persistence:
+  enabled: true
+  worker:
+    storageClass: standard
+    size: 100Gi   # local-path does not enforce this; the VM disk has ~1.9T free
+
+postgresql:
+  enabled: true
+  persistence:
+    enabled: true
+    storageClass: standard
+    resources:
+      requests:
+        storage: 8Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi

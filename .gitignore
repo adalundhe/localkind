@@ -1,0 +1,12 @@
+# --- Secrets: never commit -----------------------------------------------------------------
+# Local copy of the generated UI credentials (scripts/60-local-secrets.sh).
+.secrets/
+# Scratch space used while generating Concourse keys; removed on exit, ignored in case of a crash.
+.tmp-secrets/
+*.key
+*.pem
+*.env
+!env.sh
+
+# --- Noise ---------------------------------------------------------------------------------
+.DS_Store

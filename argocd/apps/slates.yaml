@@ -1,0 +1,37 @@
+# slates, continuously deployed from the chart Concourse publishes (pipelines/slates.yml).
+#
+# targetRevision ">=0.0.0-0" means "the highest version, pre-releases included" — always the
+# newest CI build. See argocd/apps/focal.yaml for the full explanation.
+#
+# ONE-TIME STEP: the chart refuses to render without a TLS identity (certificate + private key)
+# for every pod, and deliberately never generates them. Until they exist this app shows a
+# ComparisonError. Mint self-signed test identities and hand them to the app with
+#     scripts/apps/slates-identities.sh
+# That script sets spec.source.helm.values on the *live* Application only; key material is never
+# written into this repo. (Re-applying this manifest leaves that field alone.)
+# __DOCKER_USER__ is substituted from env.sh by scripts/30-argocd.sh.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: slates
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io   # deleting the app also deletes what it deployed
+spec:
+  project: hyper-light
+  source:
+    repoURL: registry-1.docker.io/__DOCKER_USER__
+    chart: slates-chart
+    targetRevision: ">=0.0.0-0"
+    helm:
+      # Pods are named <release>-N and the identities are keyed by pod name: keep this "slates".
+      releaseName: slates
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: slates
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true

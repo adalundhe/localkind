@@ -1,0 +1,46 @@
+# Meta-pipeline: keeps every pipeline in Concourse identical to pipelines/*.yml on main of this
+# repo. Push a change to a pipeline file and it is applied automatically within a minute or two —
+# no `fly set-pipeline` needed after the first bootstrap.
+#
+# Adding a repo: drop pipelines/<name>.yml, add a `set_pipeline` step below, push.
+
+resources:
+- name: localkind
+  type: git
+  icon: cog
+  check_every: 1m
+  source:
+    uri: https://github.com/adalundhe/localkind.git
+    branch: main
+    paths: [pipelines]
+
+jobs:
+- name: reconfigure
+  serial: true
+  build_log_retention: {builds: 20}
+  plan:
+  - get: localkind
+    trigger: true
+  - set_pipeline: self
+    file: localkind/pipelines/localkind.yml
+    vars: {docker_user: ((docker_user))}
+  - in_parallel:
+    - set_pipeline: slates
+      file: localkind/pipelines/slates.yml
+      vars: {docker_user: ((docker_user))}
+    - set_pipeline: focal
+      file: localkind/pipelines/focal.yml
+      vars: {docker_user: ((docker_user))}
+    - set_pipeline: hyperscale
+      file: localkind/pipelines/hyperscale.yml
+      vars: {docker_user: ((docker_user))}
+    - set_pipeline: vorpal
+      file: localkind/pipelines/vorpal.yml
+    - set_pipeline: mkfst-py
+      file: localkind/pipelines/mkfst-py.yml
+    - set_pipeline: cocoa
+      file: localkind/pipelines/cocoa.yml
+    - set_pipeline: sylk
+      file: localkind/pipelines/sylk.yml
+    - set_pipeline: hyperlight-site
+      file: localkind/pipelines/hyperlight-site.yml

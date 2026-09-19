@@ -1,0 +1,85 @@
+# hyper-light/mkfst-py — Python (pip + setuptools). CI only.
+# Mirrors .github/workflows/ci.yml: lint, test, build (build needs both, as upstream).
+# Upstream's matrix is py3.11–3.14 x {ubuntu, macos}; this runs the primary target, py3.13 on linux.
+
+resources:
+- name: repo
+  type: git
+  icon: github
+  check_every: 2m
+  source:
+    uri: https://github.com/hyper-light/mkfst-py.git
+    branch: main
+
+jobs:
+- name: lint
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+  - task: ruff
+    timeout: 20m
+    config: &py-task
+      platform: linux
+      image_resource:
+        type: registry-image
+        source: {repository: python, tag: "3.13"}
+      inputs:
+      - name: repo
+      caches:
+      - path: pip-cache
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export PIP_CACHE_DIR="$PWD/pip-cache" PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_ROOT_USER_ACTION=ignore
+          cd repo
+          set -x
+          python -m pip install -q -e ".[dev,auth]"
+          ruff check .
+          ruff format --check \
+            mkfst/encryption mkfst/middleware/csrf mkfst/middleware/cors mkfst/middleware/auth \
+            mkfst/snowflake mkfst/connection/tcp/protocols/http_parser.py tests/
+
+- name: test
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+  - task: pytest
+    timeout: 30m
+    config:
+      <<: *py-task
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export PIP_CACHE_DIR="$PWD/pip-cache" PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_ROOT_USER_ACTION=ignore
+          cd repo
+          set -x
+          python -m pip install -q -e ".[dev,auth]"
+          pytest -q --tb=short
+
+- name: build
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+    passed: [lint, test]
+  - task: build-and-check
+    timeout: 20m
+    config:
+      <<: *py-task
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export PIP_CACHE_DIR="$PWD/pip-cache" PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_ROOT_USER_ACTION=ignore
+          cd repo
+          set -x
+          python -m pip install -q build twine
+          python -m build
+          python -m twine check dist/*

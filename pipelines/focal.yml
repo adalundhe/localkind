@@ -1,0 +1,144 @@
+# hyper-light/focal — Rust workspace; image from deploy/container/Dockerfile, chart at deploy/helm/focal.
+#
+#   lint ─┐
+#   test ─┴─(gate)─> publish: version -> image -> docker.io/((docker_user))/focal
+#                                              -> chart -> oci://registry-1.docker.io/((docker_user))/focal-chart
+#                             Argo CD (argocd/apps/focal.yaml) then rolls out the new chart version.
+#
+# BRANCH: the Dockerfile and the Helm chart only exist on `r10-r11-windows-ci` (98 commits ahead
+# of main as of 2026-09-19). `main` also cannot pass CI from a clean clone: scripts/check-contracts.py
+# follows doc links into a sibling ../sylk checkout; the branch fixes that. Point `branch:` back
+# at main once it is merged.
+#
+# Mirrors the ubuntu half of .github/workflows/ci.yml `check`. Not ported: the macOS/Windows jobs,
+# and `dependencies` (cargo-deny) — add it as a job if you want advisories gating too.
+
+resources:
+- name: repo
+  type: git
+  icon: github
+  check_every: 2m
+  source:
+    uri: https://github.com/hyper-light/focal.git
+    branch: r10-r11-windows-ci
+
+- name: localkind
+  type: git
+  icon: cog
+  check_every: 10m
+  source:
+    uri: https://github.com/adalundhe/localkind.git
+    branch: main
+    paths: [ci]
+
+- name: image
+  type: registry-image
+  icon: docker
+  check_every: never          # write-only from here; Argo CD is the consumer
+  source:
+    repository: ((docker_user))/focal
+    tag: latest
+    username: ((docker.username))
+    password: ((docker.password))
+
+jobs:
+# serial_groups: one cargo job at a time per pipeline, so lint/test/publish don't fight over the
+# same worker's CPU/RAM budget.
+- name: lint
+  serial_groups: [cargo]
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+  - task: lint
+    timeout: 45m
+    config: &rust-task          # shared by the test job below (it overrides `run`)
+      platform: linux
+      image_resource:
+        type: registry-image
+        source: {repository: rust, tag: "1.94.1"}   # == rust-toolchain.toml channel
+      inputs:
+      - name: repo
+      caches:
+      - path: cargo-home
+      - path: target
+      params:
+        CARGO_TERM_COLOR: always
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export CARGO_HOME="$PWD/cargo-home" CARGO_TARGET_DIR="$PWD/target"
+          # Without protoc, protobuf-build falls back to compiling protobuf from C++ source.
+          apt-get update -qq && apt-get install -y -qq --no-install-recommends protobuf-compiler python3 >/dev/null
+          cd repo
+          set -x
+          python3 scripts/check-contracts.py
+          cargo fmt --all --check
+          bash scripts/cargo.sh clippy --workspace --all-targets --locked -- -D warnings
+          bash scripts/check-production.sh
+
+- name: test
+  serial_groups: [cargo]
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+  - task: test
+    timeout: 2h
+    config:
+      <<: *rust-task
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export CARGO_HOME="$PWD/cargo-home" CARGO_TARGET_DIR="$PWD/target"
+          apt-get update -qq && apt-get install -y -qq --no-install-recommends protobuf-compiler python3 >/dev/null
+          cd repo
+          set -x
+          # --test-threads=4 is upstream's own setting: the integration tests spawn multi-node
+          # fleets, and unbounded parallelism oversubscribes memory until nodes refuse admission.
+          bash scripts/cargo.sh test --workspace --locked -- --test-threads=4
+
+- name: publish
+  serial: true
+  serial_groups: [cargo]
+  build_log_retention: {builds: 30}
+  plan:
+  - in_parallel:
+    - get: repo
+      trigger: true
+      # GATE. `[lint, test]` publishes only green commits; `[]` publishes every commit.
+      passed: [lint, test]
+    - get: localkind
+  - task: version
+    file: localkind/ci/tasks/version.yml
+    params:
+      VERSION_FILE: Cargo.toml
+      SOURCE_URL: https://github.com/hyper-light/focal
+  - task: build-image
+    privileged: true
+    timeout: 1h30m
+    file: localkind/ci/tasks/build-image.yml
+    params:
+      # Context is the repo root (the Dockerfile does `COPY . .`). Static musl binary on scratch.
+      DOCKERFILE: repo/deploy/container/Dockerfile
+  - put: image
+    inputs: [image, version]
+    params:
+      image: image/image.tar
+      additional_tags: version/tags
+    get_params: {skip_download: true}
+  - task: publish-chart
+    file: localkind/ci/tasks/publish-chart.yml
+    params:
+      CHART_PATH: deploy/helm/focal
+      CHART_NAME: focal-chart
+      IMAGE_REPOSITORY: ((docker_user))/focal
+      # focal's chart takes the image as one string (`image: "focal:0.1.0"`), not repository/tag.
+      VALUES_EXPR: .image = strenv(IMAGE_REPOSITORY) + ":" + strenv(VERSION)
+      REGISTRY_NAMESPACE: ((docker_user))
+      REGISTRY_USERNAME: ((docker.username))
+      REGISTRY_PASSWORD: ((docker.password))

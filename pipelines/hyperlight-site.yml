@@ -1,0 +1,86 @@
+# hyper-light/hyperlight-site — Next.js 16 / React 19 / TypeScript. CI only.
+# Upstream has no CI; deployment is the Vercel GitHub integration, which this does not touch.
+# Jobs follow the README's order (lint, typecheck, test, build) but run independently, so one
+# red check does not hide the others. Not ported: Playwright e2e (needs browsers + a dev server).
+
+resources:
+- name: repo
+  type: git
+  icon: github
+  check_every: 2m
+  source:
+    uri: https://github.com/hyper-light/hyperlight-site.git
+    branch: main
+
+jobs:
+- name: lint
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+  - task: eslint-prettier
+    timeout: 20m
+    config: &node-task
+      platform: linux
+      image_resource:
+        type: registry-image
+        source: {repository: node, tag: "24"}   # README: Node 22+; @types/node is ^24
+      inputs:
+      - name: repo
+      caches:
+      - path: npm-cache
+      params:
+        CI: "true"
+        NEXT_TELEMETRY_DISABLED: "1"
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export npm_config_cache="$PWD/npm-cache" npm_config_update_notifier=false
+          cd repo
+          set -x
+          npm ci --no-audit --no-fund
+          npm run lint
+          npm run format:check
+
+- name: test
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+  - task: typecheck-and-unit
+    timeout: 30m
+    config:
+      <<: *node-task
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export npm_config_cache="$PWD/npm-cache" npm_config_update_notifier=false
+          cd repo
+          set -x
+          npm ci --no-audit --no-fund
+          npm run typecheck
+          npm test
+
+- name: build
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+  - task: next-build
+    timeout: 30m
+    config:
+      <<: *node-task
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export npm_config_cache="$PWD/npm-cache" npm_config_update_notifier=false
+          cd repo
+          set -x
+          npm ci --no-audit --no-fund
+          npm run build

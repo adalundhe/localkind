@@ -1,0 +1,65 @@
+# hyper-light/cocoa — Python library (PyPI: hyperlight-cocoa). CI only.
+# Upstream has no test or lint workflow and no tests/ directory (example/test_*.py are scripts
+# that run at import, not tests). These jobs cover what the repo can support today: the package
+# builds, and ruff with the repo's own ruff.toml.
+
+resources:
+- name: repo
+  type: git
+  icon: github
+  check_every: 2m
+  source:
+    uri: https://github.com/hyper-light/cocoa.git
+    branch: main
+
+jobs:
+- name: lint
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+  - task: ruff
+    timeout: 15m
+    config: &py-task
+      platform: linux
+      image_resource:
+        type: registry-image
+        source: {repository: python, tag: "3.13"}
+      inputs:
+      - name: repo
+      caches:
+      - path: pip-cache
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export PIP_CACHE_DIR="$PWD/pip-cache" PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_ROOT_USER_ACTION=ignore
+          cd repo
+          set -x
+          python -m pip install -q ruff
+          ruff check .
+
+- name: package
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+  - task: build-and-check
+    timeout: 15m
+    config:
+      <<: *py-task
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export PIP_CACHE_DIR="$PWD/pip-cache" PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_ROOT_USER_ACTION=ignore
+          cd repo
+          set -x
+          python -m pip install -q build twine
+          python -m build
+          python -m twine check dist/*
+          # Smoke: the wheel installs and imports.
+          python -m pip install -q dist/*.whl
+          python -c "import cocoa.cli; print('import ok:', cocoa.cli.__name__)"

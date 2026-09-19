@@ -1,0 +1,49 @@
+# focal, continuously deployed from the chart Concourse publishes (pipelines/focal.yml).
+#
+# targetRevision ">=0.0.0-0" means "the highest version, pre-releases included". CI versions are
+# <base>-ci.<commit count>, so that is always the newest build; Argo CD re-resolves it every
+# timeout.reconciliation (60s) and rolls the new chart — which pins the matching image — out.
+#
+# ONE-TIME STEP after the first sync: host pods mount a Secret of single-use invitations that can
+# only be minted by the running founder, so they sit in ContainerCreating until you run
+#     scripts/apps/focal-invitations.sh
+# __DOCKER_USER__ is substituted from env.sh by scripts/30-argocd.sh.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: focal
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io   # deleting the app also deletes what it deployed
+spec:
+  project: hyper-light
+  source:
+    repoURL: registry-1.docker.io/__DOCKER_USER__
+    chart: focal-chart
+    targetRevision: ">=0.0.0-0"
+    helm:
+      releaseName: focal
+      valuesObject:
+        # The chart's default topology pins pods to nodes labelled topology.kubernetes.io/zone in
+        # [a, b, c]. kind nodes carry no zone label, so every pod would stay Pending. An empty
+        # list selects the un-zoned topology instead: focal-founder (1) + focal-hosts (`hosts`).
+        zones: []
+        survive: node
+        hosts: 2
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: focal
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+  ignoreDifferences:
+  # Kubernetes fills these in on StatefulSet PVC templates; without this the app never settles.
+  - group: apps
+    kind: StatefulSet
+    jqPathExpressions:
+    - .spec.volumeClaimTemplates[]?.apiVersion
+    - .spec.volumeClaimTemplates[]?.kind
+    - .spec.volumeClaimTemplates[]?.status

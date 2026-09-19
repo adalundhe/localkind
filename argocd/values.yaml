@@ -1,0 +1,37 @@
+# Helm values for argo/argo-cd (chart 10.9.2, Argo CD v3.5.3) on Docker Desktop's
+# kind-provisioned cluster. Installed by scripts/30-argocd.sh.
+
+global:
+  domain: localhost
+
+configs:
+  params:
+    # Serve plain HTTP. The UI is only published on this machine's loopback, and this avoids a
+    # self-signed-certificate warning on every visit (and gRPC-web hassles for the argocd CLI).
+    server.insecure: true
+  cm:
+    # Must match the published Service port below (overridden from env.sh at install time).
+    url: http://localhost:8081
+    admin.enabled: true
+    exec.enabled: false
+    # How often Argo CD re-resolves sources. New chart versions pushed by Concourse are picked
+    # up within this window (default is 120s).
+    timeout.reconciliation: 60s
+
+server:
+  service:
+    # Docker Desktop publishes LoadBalancer Services on localhost — no port-forward needed.
+    type: LoadBalancer
+    servicePortHttp: 8081
+    # The chart always defines an https port; park it somewhere harmless. With server.insecure
+    # it serves the same plain-HTTP backend, so just use the http port.
+    servicePortHttps: 8444
+
+# Single-user local install: no SSO, no notifications.
+dex:
+  enabled: false
+notifications:
+  enabled: false
+
+applicationSet:
+  enabled: true

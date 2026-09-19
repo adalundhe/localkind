@@ -1,0 +1,122 @@
+# hyper-light/hyperscale — Python (uv). CI + image. Deliberately NO chart publish / Argo CD app yet:
+#
+#   helm/hyperscale is still the untouched `helm create` scaffold — it deploys nginx:1.16.0 behind
+#   an HTTP probe. The hyperscale image is a CLI tool with no long-running entrypoint (it inherits
+#   `CMD ["python3"]`), so pointing that chart at it would just CrashLoopBackOff, and the chart
+#   has no command/args/env values to fix that from outside. Once the chart describes a real
+#   workload, copy the `publish-chart` step from slates.yml and add argocd/apps/hyperscale.yaml.
+#
+# Also worth knowing: docker/images/Dockerfile has no COPY — it `pip install`s hyperscale from
+# PyPI, so the image contains the last PyPI release, not the commit being built. It is tagged with
+# the commit's version anyway so tags stay traceable; fix the Dockerfile to install from source if
+# you want the image to reflect the commit.
+#
+# Upstream has no test/lint workflow (only a PyPI release). These jobs run the tooling the repo
+# already declares: pytest via the uv dev group, and a package build + twine check.
+
+resources:
+- name: repo
+  type: git
+  icon: github
+  check_every: 2m
+  source:
+    uri: https://github.com/hyper-light/hyperscale.git
+    branch: main
+
+- name: localkind
+  type: git
+  icon: cog
+  check_every: 10m
+  source:
+    uri: https://github.com/adalundhe/localkind.git
+    branch: main
+    paths: [ci]
+
+- name: image
+  type: registry-image
+  icon: docker
+  check_every: never
+  source:
+    repository: ((docker_user))/hyperscale
+    tag: latest
+    username: ((docker.username))
+    password: ((docker.password))
+
+jobs:
+- name: test
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+  - task: unit-tests
+    timeout: 45m
+    config: &uv-task
+      platform: linux
+      image_resource:
+        type: registry-image
+        source: {repository: ghcr.io/astral-sh/uv, tag: python3.13-bookworm}
+      inputs:
+      - name: repo
+      caches:
+      - path: uv-cache
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export UV_CACHE_DIR="$PWD/uv-cache" UV_LINK_MODE=copy
+          cd repo
+          set -x
+          uv sync --frozen
+          # Unit tests only. integration/, simulation/ and end_to_end/ spawn real clusters and are
+          # driven by their own harness (and CLAUDE.md says not to run the integration tests).
+          uv run pytest tests/unit -q -n 8
+
+- name: package
+  build_log_retention: {builds: 30}
+  plan:
+  - get: repo
+    trigger: true
+  - task: build-and-check
+    timeout: 20m
+    config:
+      <<: *uv-task
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export UV_CACHE_DIR="$PWD/uv-cache" UV_LINK_MODE=copy
+          cd repo
+          set -x
+          uv build
+          uvx twine check --strict dist/*
+
+- name: publish
+  serial: true
+  build_log_retention: {builds: 30}
+  plan:
+  - in_parallel:
+    - get: repo
+      trigger: true
+      # GATE. Requires the package to build. Add `test` once tests/unit is green — as of
+      # 2026-09-19 it is not (202 failures from test/source drift, e.g. GateJobHandler's signature).
+      passed: [package]
+    - get: localkind
+  - task: version
+    file: localkind/ci/tasks/version.yml
+    params:
+      VERSION_FILE: pyproject.toml
+      SOURCE_URL: https://github.com/hyper-light/hyperscale
+  - task: build-image
+    privileged: true
+    timeout: 45m
+    file: localkind/ci/tasks/build-image.yml
+    params:
+      DOCKERFILE: repo/docker/images/Dockerfile
+  - put: image
+    inputs: [image, version]
+    params:
+      image: image/image.tar
+      additional_tags: version/tags
+    get_params: {skip_download: true}
