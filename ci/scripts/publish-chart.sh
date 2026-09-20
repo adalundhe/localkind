@@ -15,7 +15,7 @@
 #          CHART_NAME            published chart name, e.g. slates-chart
 #          VALUES_EXPR           yq expression applied to values.yaml. $IMAGE_REPOSITORY and
 #                                $VERSION are available to it via env()/strenv().
-#          IMAGE_REPOSITORY      e.g. adalundhe/slates
+#          IMAGE_REPOSITORY      e.g. lundheaudio/slates
 #          REGISTRY_NAMESPACE    Docker Hub user/org that receives the chart
 #          REGISTRY_USERNAME / REGISTRY_PASSWORD
 set -eu

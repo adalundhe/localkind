@@ -13,8 +13,8 @@ flowchart LR
     apps["slates · focal<br/>(workloads)"]
     argo -- helm install/upgrade --> apps
   end
-  cc -- "image  adalundhe/&lt;repo&gt;:&lt;version&gt;" --> hub[(Docker Hub)]
-  cc -- "chart  adalundhe/&lt;repo&gt;-chart:&lt;version&gt;" --> hub
+  cc -- "image  lundheaudio/&lt;repo&gt;:&lt;version&gt;" --> hub[(Docker Hub)]
+  cc -- "chart  lundheaudio/&lt;repo&gt;-chart:&lt;version&gt;" --> hub
   hub -- "newest chart version, re-resolved every 60s" --> argo
 ```
 
@@ -47,7 +47,9 @@ Passwords are generated at install time. `make secrets` writes them to `.secrets
    ```sh
    export DOCKER_PAT="dckr_pat_..."
    ```
-   The Docker Hub user defaults to `adalundhe`; change `DOCKER_USER` in [`env.sh`](env.sh).
+   The token must belong to the account named by `DOCKER_USER` in [`env.sh`](env.sh) (default
+   `lundheaudio`) — that one setting is both the login and the namespace artifacts are pushed to.
+   A valid token with the wrong username fails exactly like a bad token (HTTP 401).
 
 ### Bootstrap
 
@@ -203,8 +205,8 @@ repository as the image, with colliding version tags. So CI publishes each chart
 `nameOverride` in so resource names and labels are unchanged:
 
 ```
-docker pull adalundhe/slates:0.1.0-ci.718
-helm  pull oci://registry-1.docker.io/adalundhe/slates-chart --version 0.1.0-ci.718
+docker pull lundheaudio/slates:0.1.0-ci.718
+helm  pull oci://registry-1.docker.io/lundheaudio/slates-chart --version 0.1.0-ci.718
 ```
 
 The chart is pushed *after* the image and its `values.yaml` is pinned to that image, so Argo CD can
@@ -271,9 +273,10 @@ IPv4 loopback only. A browser that resolves `localhost` to `::1` first may stall
 shown — Concourse's login redirects to its configured external URL, so mixing `localhost` and
 `127.0.0.1` breaks the login cookie.
 
-**`Docker Hub rejected the credentials (HTTP 401)`.** The token is revoked, expired, or belongs to a
-different account than `DOCKER_USER`. Create a new **Read & Write** token, update `~/.zshrc`,
-`make credentials`.
+**`Docker Hub rejected the credentials (HTTP 401)`.** Either `DOCKER_USER` in `env.sh` is not the
+account that owns the token (check this first — Docker Hub gives the same 401 for a wrong username
+as for a wrong token), or the token is revoked/expired: create a new **Read & Write** token and
+update `~/.zshrc`. Then `make credentials`.
 
 **`publish` fails at `put: image` or at `helm push` with unauthorized.** Same cause; check
 `make status` → *Docker Hub credentials*.

@@ -37,7 +37,9 @@ scope="repository:${DOCKER_USER}/localkind-probe:pull,push"
 http="$(curl -sS -o "$tmp/token.json" -w '%{http_code}' -K "$tmp/curlrc" \
   "https://auth.docker.io/token?service=registry.docker.io&scope=${scope}")" || die "could not reach auth.docker.io"
 rm -f "$tmp/curlrc"
-[ "$http" = "200" ] || die "Docker Hub rejected the credentials for '$DOCKER_USER' (HTTP $http). Is DOCKER_PAT current?"
+[ "$http" = "200" ] || die "Docker Hub rejected the credentials for '$DOCKER_USER' (HTTP $http).
+    Docker Hub answers a wrong *username* exactly like a wrong token, so check first that
+    DOCKER_USER in env.sh is the account that owns the token; then whether DOCKER_PAT is current."
 # The granted actions are inside the (unverified, we only read it) JWT payload.
 actions="$(jq -r '.token' "$tmp/token.json" | cut -d. -f2 | tr '_-' '/+' |
   awk '{ pad = (4 - length($0) % 4) % 4; while (pad-- > 0) $0 = $0 "="; print }' |

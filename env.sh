@@ -5,7 +5,7 @@
 # --- Where things run -------------------------------------------------------
 : "${KUBE_CONTEXT:=docker-desktop}"   # Docker Desktop's kind-provisioned cluster
 : "${GITHUB_ORG:=hyper-light}"
-: "${DOCKER_USER:=adalundhe}"         # Docker Hub namespace that receives images + charts
+: "${DOCKER_USER:=lundheaudio}"       # Docker Hub account: login for DOCKER_PAT *and* the namespace that receives images + charts
 : "${DOCKER_PAT_SOURCE:=$HOME/.zshrc}" # file containing `export DOCKER_PAT=...`
 
 # --- Concourse ---------------------------------------------------------------
