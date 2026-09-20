@@ -1,0 +1,16 @@
+# Minimal Tilt example for this cluster. From this directory:   tilt up     (then press space)
+#
+# Edit index.html and save: Tilt rebuilds the image and rolls the Deployment in a few seconds.
+# Nothing is pushed anywhere — Docker Desktop's kind nodes pull through a mirror of the local
+# Docker image store, and Tilt knows not to push on the docker-desktop context.
+#
+# For a repo with a Helm chart, swap k8s_yaml('k8s.yaml') for:
+#   k8s_yaml(helm('deploy/helm/<chart>', name='<release>', namespace='<ns>',
+#                 set=['image.repository=hello-tilt', ...]))
+# Tilt rewrites the image reference in the rendered manifests to the tag it just built.
+
+allow_k8s_contexts('docker-desktop')   # never deploy a dev build anywhere else by accident
+
+docker_build('hello-tilt', '.')
+k8s_yaml('k8s.yaml')
+k8s_resource('hello-tilt', port_forwards='8090:8080')   # http://localhost:8090, loopback only

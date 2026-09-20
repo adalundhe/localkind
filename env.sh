@@ -42,7 +42,25 @@
 : "${KIALI_PORT:=8082}"
 : "${KIALI_URL:=http://localhost:${KIALI_PORT}}"
 
-export ISTIO_NAMESPACE ISTIO_VERSION GATEWAY_API_VERSION KIALI_VERSION KIALI_PORT KIALI_URL
+# Grafana (Istio's addon, so it tracks ISTIO_VERSION) on the mesh's Prometheus.
+: "${GRAFANA_PORT:=8084}"
+: "${GRAFANA_URL:=http://localhost:${GRAFANA_PORT}}"
+
+export ISTIO_NAMESPACE ISTIO_VERSION GATEWAY_API_VERSION KIALI_VERSION KIALI_PORT KIALI_URL \
+  GRAFANA_PORT GRAFANA_URL
+
+# --- Cluster add-ons ----------------------------------------------------------
+: "${METRICS_SERVER_CHART_VERSION:=3.14.0}"   # metrics-server 0.9.0
+: "${CHAOS_MESH_NAMESPACE:=chaos-mesh}"
+: "${CHAOS_MESH_VERSION:=2.8.4}"
+: "${CHAOS_MESH_URL:=http://localhost:2333}"   # the chart fixes the dashboard port at 2333
+
+# --- Host dev tools -----------------------------------------------------------
+: "${TILT_VERSION:=0.37.7}"
+: "${TILT_BIN:=$HOME/.local/bin/tilt}"
+
+export METRICS_SERVER_CHART_VERSION CHAOS_MESH_NAMESPACE CHAOS_MESH_VERSION CHAOS_MESH_URL \
+  TILT_VERSION TILT_BIN
 export KUBE_CONTEXT GITHUB_ORG DOCKER_USER DOCKER_PAT_SOURCE \
   CONCOURSE_NAMESPACE CONCOURSE_RELEASE CONCOURSE_CHART_VERSION CONCOURSE_IMAGE_TAG \
   CONCOURSE_PORT CONCOURSE_URL CONCOURSE_TEAM CONCOURSE_ADMIN_USER FLY_TARGET FLY_BIN \

@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-tilt
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: hello-tilt}
+  template:
+    metadata:
+      labels: {app: hello-tilt}
+    spec:
+      containers:
+      - name: web
+        image: hello-tilt
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet: {path: /, port: 8080}

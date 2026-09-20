@@ -29,12 +29,14 @@ write access to any Git repo.
 | Concourse | <http://localhost:8080> | `admin` / generated |
 | Argo CD | <http://localhost:8081> | `admin` / generated |
 | Kiali (Istio UI) | <http://localhost:8082/kiali> | generated token |
+| Grafana | <http://localhost:8084> | `admin` / generated |
+| Chaos Mesh | <http://localhost:2333> | any name + generated token |
 
 Credentials are generated at install time. `make secrets` writes them to `.secrets/credentials.env`
 (git-ignored, mode 0600); `make access` prints them.
 
 > **These ports are not loopback-only.** Docker Desktop publishes `LoadBalancer` Services on every
-> IPv4 interface, so other devices on your network can reach all three UIs. Every one requires a
+> IPv4 interface, so other devices on your network can reach all of these UIs. Every one requires a
 > login (which is why Kiali uses token auth here rather than Istio's anonymous default) — but turn
 > on the macOS firewall, or stay off untrusted networks, if that matters to you.
 
@@ -73,13 +75,17 @@ That one command takes an empty cluster to a working platform, and is safe to re
 | Concourse secrets | `10-concourse-secrets.sh` | Generates signing/SSH keys + admin and DB passwords straight into Kubernetes Secrets |
 | Concourse | `20-concourse.sh` | Helm install of web + 2 workers + Postgres; waits for the API |
 | Argo CD | `30-argocd.sh` | Helm install; applies `argocd/projects` and `argocd/apps` |
+| metrics-server | `32-metrics-server.sh` | `kubectl top`, HPAs, CPU/memory in k9s and Kiali |
 | Istio | `35-istio.sh` | Istio in **ambient** mode (istiod, istio-cni, ztunnel) + Gateway API CRDs |
 | Kiali | `37-kiali.sh` | The Istio UI, with token login, plus the Prometheus it reads from |
+| Grafana | `38-grafana.sh` | Istio's dashboards on that Prometheus; anonymous access off, generated admin password |
+| Chaos Mesh | `39-chaos-mesh.sh` | Pod + network fault injection, with its dashboard in token-security mode |
 | Docker Hub credentials | `40-registry-credentials.sh` | Verifies the token with Docker Hub (incl. push scope), then installs it for pipelines and Argo CD |
 | CLIs | `50-cli-login.sh` | Installs `fly` + `argocd` to `~/.local/bin` and logs both in |
 | Local credentials | `60-local-secrets.sh` | Writes `.secrets/credentials.env` |
 | Warm image cache | `65-warm-images.sh` | Pulls every pipeline base image into Concourse's cache **one at a time** (see *Concourse on kind*) |
 | Pipelines | `70-pipelines.sh` | Sets and unpauses every pipeline in `pipelines/` |
+| Tilt | `80-tilt.sh` | Installs the `tilt` CLI (pinned, SHA-256 verified) for the inner dev loop |
 
 If the Docker Hub token is rejected, bootstrap still brings everything up (CI runs; only pushes
 fail) and exits non-zero telling you so. Fix the token, then `make credentials`.
@@ -161,6 +167,58 @@ pods running their own nested container networking. ztunnel only captures TCP, s
 traffic (focal, slates) is unaffected either way. `make istio` installs or upgrades; versions are
 pinned in [`env.sh`](env.sh) (bump `ISTIO_VERSION` and `GATEWAY_API_VERSION` together).
 
+### Inner dev loop (Tilt)
+
+CI is the slow path: push → Concourse → Docker Hub → Argo CD is ten minutes or more. For
+edit-and-see, use [Tilt](https://tilt.dev): it watches your files, rebuilds the image and rolls
+the workload in seconds, with none of those in the way.
+
+```sh
+cd examples/tilt && tilt up          # space opens its UI; edit index.html and watch it redeploy
+tilt down                            # remove what it deployed
+```
+
+**No registry is involved.** Docker Desktop's kind nodes pull through a mirror of your local
+Docker image store, and Tilt does not push on the `docker-desktop` context — a freshly built image
+is "pulled" by the node in tens of milliseconds. [`examples/tilt`](examples/tilt) is a minimal
+working template; its `Tiltfile` shows the two-line change for a repo that deploys with a Helm
+chart. `tilt ci` is the headless form (build, deploy, wait for healthy, exit).
+
+### Fault injection (Chaos Mesh)
+
+Kill pods, partition them, or add latency/loss/corruption with netem. Unlike Istio's fault
+injection, which is HTTP-only, this works on **any IP traffic** — which is the point here, since
+focal and slates replicate over UDP/QUIC. Experiments are plain Kubernetes objects:
+
+```sh
+kubectl apply -f - <<EOF
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata: {name: slow-focal, namespace: focal}
+spec:
+  action: delay                       # also: loss, duplicate, corrupt, partition, bandwidth
+  mode: all                           # or one / fixed / fixed-percent / random-max-percent
+  selector:
+    namespaces: [focal]
+    labelSelectors: {app.kubernetes.io/name: focal}
+  delay: {latency: 300ms, jitter: 50ms}
+  duration: 5m                        # omit to keep it until you delete the object
+EOF
+kubectl -n focal delete networkchaos slow-focal      # stop immediately
+```
+
+`PodChaos` (`pod-kill`, `pod-failure`, `container-kill`), `StressChaos`, `IOChaos`, `TimeChaos`
+and scheduled/`Workflow` experiments work the same way; the dashboard at
+<http://localhost:2333> builds them interactively (log in with any name plus `CHAOS_MESH_TOKEN`).
+The chaos daemon does not run on the control-plane node, which is fine: workloads do not either.
+
+### Metrics
+
+`kubectl top nodes` / `kubectl top pods -A` work (metrics-server). Grafana at
+<http://localhost:8084> has Istio's dashboards — mesh, service, workload, ztunnel, control plane —
+on the same single-pod, non-persistent Prometheus that Kiali uses. They fill in once a namespace is
+in the mesh and has traffic.
+
 ### Change a pipeline
 
 Pipelines are GitOps'd. The **`localkind` meta-pipeline** watches `pipelines/` on `main` of this
@@ -213,6 +271,7 @@ concourse/values.yaml     Helm values for Concourse
 argocd/values.yaml        Helm values for Argo CD
 istio/istiod.yaml         Helm values for istiod (ambient profile is set by scripts/35-istio.sh)
 istio/kiali.yaml          Helm values for Kiali, the Istio UI
+examples/tilt/            minimal working Tilt project to copy from
 argocd/projects/          AppProject: what may be deployed, and where
 argocd/apps/              one Application per deployable repo
 pipelines/                one Concourse pipeline per repo + the localkind meta-pipeline
@@ -316,6 +375,8 @@ platform's own admin password, never the Docker Hub token).
 | Concourse DB password | `concourse/concourse-db` | `10-concourse-secrets.sh` |
 | Argo CD admin login | `argocd/argocd-initial-admin-secret` | Argo CD itself |
 | Kiali login token | `istio-system/kiali-login-token` | `37-kiali.sh` |
+| Grafana admin login | `istio-system/grafana-admin` | `38-grafana.sh` |
+| Chaos Mesh dashboard token | `chaos-mesh/chaos-manager-token` | `39-chaos-mesh.sh` |
 | slates pod identities | the live `slates` Application (`spec.source.helm.values`) | `apps/slates-identities.sh` |
 | Local copy of the UI logins | `.secrets/credentials.env`, git-ignored, 0600 | `60-local-secrets.sh` |
 

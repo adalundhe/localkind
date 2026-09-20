@@ -37,7 +37,9 @@ port_check() { # <port> <namespace> <service>
 port_check "$CONCOURSE_PORT" "$CONCOURSE_NAMESPACE" "${CONCOURSE_RELEASE}-web"
 port_check "$ARGOCD_PORT" "$ARGOCD_NAMESPACE" "${ARGOCD_RELEASE}-server"
 port_check "$KIALI_PORT" "$ISTIO_NAMESPACE" kiali
-ok "ports $CONCOURSE_PORT (Concourse), $ARGOCD_PORT (Argo CD) and $KIALI_PORT (Kiali) are available"
+port_check "$GRAFANA_PORT" "$ISTIO_NAMESPACE" grafana
+port_check 2333 "$CHAOS_MESH_NAMESPACE" chaos-dashboard
+ok "ports $CONCOURSE_PORT (Concourse), $ARGOCD_PORT (Argo CD), $KIALI_PORT (Kiali), $GRAFANA_PORT (Grafana) and 2333 (Chaos Mesh) are available"
 
 if [ -n "${DOCKER_PAT:-}" ] || grep -qE '^[[:space:]]*(export[[:space:]]+)?DOCKER_PAT=' "$DOCKER_PAT_SOURCE" 2>/dev/null; then
   ok "DOCKER_PAT found (validated against Docker Hub later, by 40-registry-credentials.sh)"

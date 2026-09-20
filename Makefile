@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-.PHONY: help bootstrap preflight dns concourse argocd istio kiali credentials login secrets warm pipelines access open status focal-invitations slates-identities check
+.PHONY: help bootstrap preflight dns concourse argocd istio kiali grafana metrics-server chaos-mesh tilt credentials login secrets warm pipelines access open status focal-invitations slates-identities check
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -27,6 +27,18 @@ istio: ## Install/upgrade Istio (ambient mode) + Gateway API CRDs
 
 kiali: ## Install/upgrade Kiali (the Istio UI) + Prometheus
 	@scripts/37-kiali.sh
+
+grafana: ## Install/upgrade Grafana with Istio's dashboards (generated admin password)
+	@scripts/38-grafana.sh
+
+metrics-server: ## Install/upgrade metrics-server (kubectl top, HPAs)
+	@scripts/32-metrics-server.sh
+
+chaos-mesh: ## Install/upgrade Chaos Mesh (pod + network fault injection) and its dashboard
+	@scripts/39-chaos-mesh.sh
+
+tilt: ## Install the Tilt CLI for the inner dev loop (see examples/tilt)
+	@scripts/80-tilt.sh
 
 credentials: ## Verify DOCKER_PAT with Docker Hub and (re)install it in the cluster
 	@scripts/40-registry-credentials.sh

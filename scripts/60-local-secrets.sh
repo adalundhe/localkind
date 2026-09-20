@@ -37,6 +37,15 @@ if secret_exists "$ISTIO_NAMESPACE" kiali-login-token; then
   kiali_token="$(secret_value "$ISTIO_NAMESPACE" kiali-login-token token)"
 fi
 
+grafana_pw=""
+if secret_exists "$ISTIO_NAMESPACE" grafana-admin; then
+  grafana_pw="$(secret_value "$ISTIO_NAMESPACE" grafana-admin GF_SECURITY_ADMIN_PASSWORD)"
+fi
+chaos_token=""
+if secret_exists "$CHAOS_MESH_NAMESPACE" chaos-manager-token; then
+  chaos_token="$(secret_value "$CHAOS_MESH_NAMESPACE" chaos-manager-token token)"
+fi
+
 umask 077
 mkdir -p "$dir"; chmod 700 "$dir"
 tmp="$(mktemp "$dir/.credentials.XXXXXX")"
@@ -58,8 +67,16 @@ ARGOCD_PASSWORD=$argocd_pw
 # Kiali (Istio UI): paste KIALI_TOKEN into the login page. Empty if Kiali is not installed.
 KIALI_URL=$KIALI_URL/kiali
 KIALI_TOKEN=$kiali_token
+
+GRAFANA_URL=$GRAFANA_URL
+GRAFANA_USERNAME=admin
+GRAFANA_PASSWORD=$grafana_pw
+
+# Chaos Mesh dashboard: "Name" can be anything; paste CHAOS_MESH_TOKEN as the token.
+CHAOS_MESH_URL=$CHAOS_MESH_URL
+CHAOS_MESH_TOKEN=$chaos_token
 EOF
-unset concourse_pw argocd_pw kiali_token
+unset concourse_pw argocd_pw kiali_token grafana_pw chaos_token
 chmod 600 "$tmp"
 mv "$tmp" "$file"
 
