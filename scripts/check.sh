@@ -56,7 +56,8 @@ if [ -n "$hits" ]; then warn "secret-shaped content in: $(echo $hits)"; fail=1; 
   secret_value "$CONCOURSE_NAMESPACE" concourse-admin password 2>/dev/null; echo
   secret_value "$CONCOURSE_NAMESPACE" concourse-db password 2>/dev/null; echo
   secret_value "$ARGOCD_NAMESPACE" argocd-initial-admin-secret password 2>/dev/null; echo
-  [ -f .secrets/credentials.env ] && sed -n 's/^[A-Z_]*PASSWORD=//p' .secrets/credentials.env
+  secret_value "$ISTIO_NAMESPACE" kiali-login-token token 2>/dev/null; echo
+  [ -f .secrets/credentials.env ] && sed -n -E 's/^[A-Z_]*(PASSWORD|TOKEN)=//p' .secrets/credentials.env
 } 2>/dev/null | awk 'length($0) >= 8' | sort -u > "$needles"
 count="$(wc -l < "$needles" | tr -d ' ')"
 if [ "$count" -gt 0 ]; then
