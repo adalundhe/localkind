@@ -12,6 +12,7 @@ step "Concourse: keys + passwords"     "$here/10-concourse-secrets.sh"
 step "Concourse: install"              "$here/20-concourse.sh"
 step "Argo CD: install + applications" "$here/30-argocd.sh"
 step "Istio: ambient service mesh"     "$here/35-istio.sh"
+step "Kiali: mesh UI + Prometheus"     "$here/37-kiali.sh"
 
 # A bad Docker Hub token must not stop the platform coming up: CI still runs, only pushes fail.
 registry_ok=1

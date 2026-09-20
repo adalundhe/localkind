@@ -1,0 +1,25 @@
+# Helm values for kiali/kiali-server — the Istio console. Version pinned in env.sh to the one
+# Istio's own release ships as its addon, so the two are known to be compatible.
+auth:
+  # NOT Istio's addon default (anonymous + writable). Docker Desktop publishes LoadBalancer ports
+  # on every interface, so anything unauthenticated here is open to the local network. Log in
+  # with the token that scripts/37-kiali.sh creates (KIALI_TOKEN in .secrets/credentials.env).
+  strategy: token
+
+deployment:
+  service_type: LoadBalancer      # published on localhost by Docker Desktop, like the other UIs
+
+server:
+  port: 8082                      # overridden from env.sh (KIALI_PORT)
+  web_root: /kiali
+  observability:
+    metrics:
+      enabled: false              # else the LoadBalancer would also publish :9090 on the host
+
+external_services:
+  prometheus:
+    url: http://prometheus.istio-system:9090
+  grafana:
+    enabled: false
+  tracing:
+    enabled: false

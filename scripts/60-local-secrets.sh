@@ -32,6 +32,11 @@ concourse_pw="$(secret_value "$CONCOURSE_NAMESPACE" concourse-admin password)"
 argocd_pw="$(secret_value "$ARGOCD_NAMESPACE" argocd-initial-admin-secret password)" ||
   die "Argo CD initial admin secret not found — run scripts/30-argocd.sh"
 
+kiali_token=""
+if secret_exists "$ISTIO_NAMESPACE" kiali-login-token; then
+  kiali_token="$(secret_value "$ISTIO_NAMESPACE" kiali-login-token token)"
+fi
+
 umask 077
 mkdir -p "$dir"; chmod 700 "$dir"
 tmp="$(mktemp "$dir/.credentials.XXXXXX")"
@@ -49,8 +54,12 @@ FLY_TARGET=$FLY_TARGET
 ARGOCD_URL=$ARGOCD_URL
 ARGOCD_USERNAME=admin
 ARGOCD_PASSWORD=$argocd_pw
+
+# Kiali (Istio UI): paste KIALI_TOKEN into the login page. Empty if Kiali is not installed.
+KIALI_URL=$KIALI_URL/kiali
+KIALI_TOKEN=$kiali_token
 EOF
-unset concourse_pw argocd_pw
+unset concourse_pw argocd_pw kiali_token
 chmod 600 "$tmp"
 mv "$tmp" "$file"
 

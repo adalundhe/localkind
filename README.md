@@ -28,9 +28,15 @@ write access to any Git repo.
 |---|---|---|
 | Concourse | <http://localhost:8080> | `admin` / generated |
 | Argo CD | <http://localhost:8081> | `admin` / generated |
+| Kiali (Istio UI) | <http://localhost:8082/kiali> | generated token |
 
-Passwords are generated at install time. `make secrets` writes them to `.secrets/credentials.env`
+Credentials are generated at install time. `make secrets` writes them to `.secrets/credentials.env`
 (git-ignored, mode 0600); `make access` prints them.
+
+> **These ports are not loopback-only.** Docker Desktop publishes `LoadBalancer` Services on every
+> IPv4 interface, so other devices on your network can reach all three UIs. Every one requires a
+> login (which is why Kiali uses token auth here rather than Istio's anonymous default) — but turn
+> on the macOS firewall, or stay off untrusted networks, if that matters to you.
 
 ---
 
@@ -68,6 +74,7 @@ That one command takes an empty cluster to a working platform, and is safe to re
 | Concourse | `20-concourse.sh` | Helm install of web + 2 workers + Postgres; waits for the API |
 | Argo CD | `30-argocd.sh` | Helm install; applies `argocd/projects` and `argocd/apps` |
 | Istio | `35-istio.sh` | Istio in **ambient** mode (istiod, istio-cni, ztunnel) + Gateway API CRDs |
+| Kiali | `37-kiali.sh` | The Istio UI, with token login, plus the Prometheus it reads from |
 | Docker Hub credentials | `40-registry-credentials.sh` | Verifies the token with Docker Hub (incl. push scope), then installs it for pipelines and Argo CD |
 | CLIs | `50-cli-login.sh` | Installs `fly` + `argocd` to `~/.local/bin` and logs both in |
 | Local credentials | `60-local-secrets.sh` | Writes `.secrets/credentials.env` |
@@ -144,6 +151,11 @@ kubectl label namespace <ns> istio.io/use-waypoint=waypoint
 Ingress works the same way: a `Gateway` with `gatewayClassName: istio` makes Istio create a
 Deployment and a `LoadBalancer` Service, which Docker Desktop publishes on `localhost:<port>`.
 
+**The UI is Kiali** — <http://localhost:8082/kiali> (Istio has none of its own). Log in with
+`KIALI_TOKEN` from `.secrets/credentials.env`, or `scripts/access.sh --copy kiali`. The traffic
+graph only shows namespaces that are in the mesh *and* have had traffic recently; metrics come
+from a single-pod, non-persistent Prometheus (Istio's sample addon), so history resets with it.
+
 Keep `concourse`, `argocd` and `kube-system` **out** of the mesh — Concourse workers are privileged
 pods running their own nested container networking. ztunnel only captures TCP, so UDP/QUIC
 traffic (focal, slates) is unaffected either way. `make istio` installs or upgrades; versions are
@@ -200,6 +212,7 @@ scripts/                  numbered bootstrap steps + access/status/check
 concourse/values.yaml     Helm values for Concourse
 argocd/values.yaml        Helm values for Argo CD
 istio/istiod.yaml         Helm values for istiod (ambient profile is set by scripts/35-istio.sh)
+istio/kiali.yaml          Helm values for Kiali, the Istio UI
 argocd/projects/          AppProject: what may be deployed, and where
 argocd/apps/              one Application per deployable repo
 pipelines/                one Concourse pipeline per repo + the localkind meta-pipeline
@@ -302,8 +315,9 @@ platform's own admin password, never the Docker Hub token).
 | Concourse admin login | `concourse/concourse-admin` (+ `local-users` in `concourse-web`) | `10-concourse-secrets.sh` |
 | Concourse DB password | `concourse/concourse-db` | `10-concourse-secrets.sh` |
 | Argo CD admin login | `argocd/argocd-initial-admin-secret` | Argo CD itself |
+| Kiali login token | `istio-system/kiali-login-token` | `37-kiali.sh` |
 | slates pod identities | the live `slates` Application (`spec.source.helm.values`) | `apps/slates-identities.sh` |
-| Local copy of the two UI logins | `.secrets/credentials.env`, git-ignored, 0600 | `60-local-secrets.sh` |
+| Local copy of the UI logins | `.secrets/credentials.env`, git-ignored, 0600 | `60-local-secrets.sh` |
 
 Pipelines reference `((docker.username))` / `((docker.password))`; Concourse's Kubernetes credential
 manager resolves those at run time from Secret `docker` in namespace `concourse-main`, and redacts
@@ -322,8 +336,8 @@ ln -s ../../scripts/check.sh .git/hooks/pre-commit
 
 ## Troubleshooting
 
-**A UI will not load in the browser, but `curl` works.** Docker Desktop publishes these ports on
-IPv4 loopback only. A browser that resolves `localhost` to `::1` first may stall;
+**A UI will not load in the browser, but `curl` works.** Docker Desktop listens on IPv4 only. A
+browser that resolves `localhost` to `::1` first may stall;
 `curl -4 http://localhost:8080/api/v1/info` proves the service is fine. Always use the URLs exactly as
 shown — Concourse's login redirects to its configured external URL, so mixing `localhost` and
 `127.0.0.1` breaks the login cookie.

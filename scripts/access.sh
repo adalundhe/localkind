@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
-# Shows how to reach the Concourse and Argo CD UIs: URLs, usernames and (generated) passwords.
+# Shows how to reach the Concourse, Argo CD and Kiali UIs: URLs, usernames and generated credentials.
 #
 #   scripts/access.sh                  print URLs + credentials
 #   scripts/access.sh --no-passwords   print URLs + usernames only (safe to paste / screen-share)
 #   scripts/access.sh --copy concourse copy that UI's password to the clipboard, print nothing secret
 #   scripts/access.sh --copy argocd
-#   scripts/access.sh --open           also open both UIs in the browser
+#   scripts/access.sh --copy kiali     (Kiali logs in with a token, not a password)
+#   scripts/access.sh --open           also open the UIs in the browser
 #
 # Passwords are generated at install time and live only in Kubernetes Secrets:
 #   concourse/concourse-admin              (username, password)
 #   argocd/argocd-initial-admin-secret     (password; username is "admin")
+#   istio-system/kiali-login-token         (token)
 . "$(dirname "$0")/lib.sh"
 need kubectl
 
@@ -19,7 +21,7 @@ while [ $# -gt 0 ]; do
     --no-passwords) show_passwords=0 ;;
     --copy) copy="${2:-}"; shift ;;
     --open) open_ui=1 ;;
-    -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown argument: $1 (try --help)" ;;
   esac
   shift
@@ -27,13 +29,15 @@ done
 
 concourse_pw() { secret_value "$CONCOURSE_NAMESPACE" concourse-admin password; }
 argocd_pw()    { secret_value "$ARGOCD_NAMESPACE" argocd-initial-admin-secret password; }
+kiali_token()  { secret_value "$ISTIO_NAMESPACE" kiali-login-token token; }
 
 if [ -n "$copy" ]; then
   need pbcopy
   case "$copy" in
     concourse) concourse_pw | pbcopy; ok "Concourse password for '$CONCOURSE_ADMIN_USER' copied to the clipboard" ;;
     argocd)    argocd_pw    | pbcopy; ok "Argo CD password for 'admin' copied to the clipboard" ;;
-    *) die "--copy expects 'concourse' or 'argocd'" ;;
+    kiali)     kiali_token  | pbcopy; ok "Kiali login token copied to the clipboard" ;;
+    *) die "--copy expects 'concourse', 'argocd' or 'kiali'" ;;
   esac
   exit 0
 fi
@@ -56,19 +60,25 @@ field URL      "$ARGOCD_URL"
 field username "admin"
 field password "$(pw argocd_pw)"
 
+printf '\n\033[1mKiali (Istio UI)\033[0m  (%s)\n' "$(status "$KIALI_URL/kiali/healthz")"
+field URL      "$KIALI_URL/kiali"
+field login    "token  (scripts/access.sh --copy kiali puts it on the clipboard)"
+field token    "$(pw kiali_token)"
+
 cat <<EOF
 
 Notes
   - Use the URLs exactly as shown. Concourse's login flow redirects to its configured external
     URL, so mixing "localhost" and "127.0.0.1" breaks the login cookie.
-  - Docker Desktop publishes these ports on IPv4 loopback only. If a browser hangs on
-    "localhost", it is trying IPv6 (::1) first; curl -4 $CONCOURSE_URL/api/v1/info proves the
-    service itself is fine.
-  - Nothing is published beyond this machine.
+  - Docker Desktop listens on IPv4 only. If a browser hangs on "localhost", it is trying IPv6
+    (::1) first; curl -4 $CONCOURSE_URL/api/v1/info proves the service itself is fine.
+  - These ports are NOT loopback-only: Docker Desktop publishes LoadBalancer Services on every
+    IPv4 interface, so other devices on your network can reach them. Each UI requires a login;
+    turn on the macOS firewall (or stay off untrusted networks) if that matters to you.
 
 EOF
 
 if [ "$open_ui" = 1 ]; then
   need open
-  open "$CONCOURSE_URL"; open "$ARGOCD_URL"
+  open "$CONCOURSE_URL"; open "$ARGOCD_URL"; open "$KIALI_URL/kiali"
 fi
