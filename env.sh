@@ -32,6 +32,12 @@
 : "${ARGOCD_URL:=http://localhost:${ARGOCD_PORT}}"
 : "${ARGOCD_BIN:=$HOME/.local/bin/argocd}"
 
+# --- Istio (ambient mode) ---------------------------------------------------
+: "${ISTIO_NAMESPACE:=istio-system}"
+: "${ISTIO_VERSION:=1.30.4}"
+: "${GATEWAY_API_VERSION:=v1.5.1}"    # what Istio 1.30 is tested against; bump together
+
+export ISTIO_NAMESPACE ISTIO_VERSION GATEWAY_API_VERSION
 export KUBE_CONTEXT GITHUB_ORG DOCKER_USER DOCKER_PAT_SOURCE \
   CONCOURSE_NAMESPACE CONCOURSE_RELEASE CONCOURSE_CHART_VERSION CONCOURSE_IMAGE_TAG \
   CONCOURSE_PORT CONCOURSE_URL CONCOURSE_TEAM CONCOURSE_ADMIN_USER FLY_TARGET FLY_BIN \

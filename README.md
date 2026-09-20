@@ -18,6 +18,7 @@ flowchart LR
   hub -- "newest chart version, re-resolved every 60s" --> argo
 ```
 
+**Istio** (ambient mode) is installed as the service mesh; namespaces opt in with a label.
 **Concourse** runs CI for every repo and pushes two artifacts for each deployable one — a container
 image and a Helm chart pinned to that exact image. **Docker Hub** is the hand-off point.
 **Argo CD** watches for new chart versions and deploys them. CI never talks to Argo CD and needs no
@@ -66,6 +67,7 @@ That one command takes an empty cluster to a working platform, and is safe to re
 | Concourse secrets | `10-concourse-secrets.sh` | Generates signing/SSH keys + admin and DB passwords straight into Kubernetes Secrets |
 | Concourse | `20-concourse.sh` | Helm install of web + 2 workers + Postgres; waits for the API |
 | Argo CD | `30-argocd.sh` | Helm install; applies `argocd/projects` and `argocd/apps` |
+| Istio | `35-istio.sh` | Istio in **ambient** mode (istiod, istio-cni, ztunnel) + Gateway API CRDs |
 | Docker Hub credentials | `40-registry-credentials.sh` | Verifies the token with Docker Hub (incl. push scope), then installs it for pipelines and Argo CD |
 | CLIs | `50-cli-login.sh` | Installs `fly` + `argocd` to `~/.local/bin` and logs both in |
 | Local credentials | `60-local-secrets.sh` | Writes `.secrets/credentials.env` |
@@ -105,6 +107,47 @@ argocd app list
 argocd app get slates
 argocd app sync focal                               # sync now instead of waiting ≤60s
 ```
+
+### Service mesh (Istio, ambient mode)
+
+Istio runs in **ambient** mode: no sidecars and no injection. A `ztunnel` on every node gives
+enrolled pods mTLS, workload identity (SPIFFE) and L4 policy. Nothing is in the mesh until you
+opt a namespace in — and that takes effect immediately, with no pod restarts:
+
+```sh
+kubectl label namespace <ns> istio.io/dataplane-mode=ambient      # join the mesh
+kubectl label namespace <ns> istio.io/dataplane-mode-             # leave it
+kubectl -n istio-system logs -l app=ztunnel | grep 'connection complete'   # who talked to whom
+```
+
+L7 features (HTTP routing, retries, header-based authorization) are opt-in per namespace via a
+**waypoint proxy**, declared with the Gateway API:
+
+```sh
+kubectl apply -n <ns> -f - <<EOF
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: waypoint
+  labels:
+    istio.io/waypoint-for: service
+spec:
+  gatewayClassName: istio-waypoint
+  listeners:
+  - name: mesh
+    port: 15008
+    protocol: HBONE
+EOF
+kubectl label namespace <ns> istio.io/use-waypoint=waypoint
+```
+
+Ingress works the same way: a `Gateway` with `gatewayClassName: istio` makes Istio create a
+Deployment and a `LoadBalancer` Service, which Docker Desktop publishes on `localhost:<port>`.
+
+Keep `concourse`, `argocd` and `kube-system` **out** of the mesh — Concourse workers are privileged
+pods running their own nested container networking. ztunnel only captures TCP, so UDP/QUIC
+traffic (focal, slates) is unaffected either way. `make istio` installs or upgrades; versions are
+pinned in [`env.sh`](env.sh) (bump `ISTIO_VERSION` and `GATEWAY_API_VERSION` together).
 
 ### Change a pipeline
 
@@ -156,6 +199,7 @@ scripts/                  numbered bootstrap steps + access/status/check
   apps/                   one-time per-app helpers (focal invitations, slates identities)
 concourse/values.yaml     Helm values for Concourse
 argocd/values.yaml        Helm values for Argo CD
+istio/istiod.yaml         Helm values for istiod (ambient profile is set by scripts/35-istio.sh)
 argocd/projects/          AppProject: what may be deployed, and where
 argocd/apps/              one Application per deployable repo
 pipelines/                one Concourse pipeline per repo + the localkind meta-pipeline

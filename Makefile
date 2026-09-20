@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-.PHONY: help bootstrap preflight dns concourse argocd credentials login secrets warm pipelines access open status focal-invitations slates-identities check
+.PHONY: help bootstrap preflight dns concourse argocd istio credentials login secrets warm pipelines access open status focal-invitations slates-identities check
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -21,6 +21,9 @@ concourse: ## Install/upgrade Concourse (after editing concourse/values.yaml)
 
 argocd: ## Install/upgrade Argo CD and re-apply argocd/projects + argocd/apps
 	@scripts/30-argocd.sh
+
+istio: ## Install/upgrade Istio (ambient mode) + Gateway API CRDs
+	@scripts/35-istio.sh
 
 credentials: ## Verify DOCKER_PAT with Docker Hub and (re)install it in the cluster
 	@scripts/40-registry-credentials.sh

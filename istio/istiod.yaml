@@ -1,0 +1,15 @@
+# Helm values for istio/istiod in AMBIENT mode (the `ambient` profile itself is set by
+# scripts/35-istio.sh with --set profile=ambient, alongside the cni and ztunnel charts).
+pilot:
+  # Laptop-sized: the chart defaults request 500m CPU / 2Gi and autoscale up to 5 replicas.
+  autoscaleEnabled: false
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+meshConfig:
+  # Envoy access logs on stdout for waypoints and gateways — this is a dev cluster, so see
+  # everything. (ztunnel logs every L4 connection, with both SPIFFE identities, by default.)
+  accessLogFile: /dev/stdout
