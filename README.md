@@ -62,6 +62,7 @@ That one command takes an empty cluster to a working platform, and is safe to re
 | Step | Script | What it does |
 |---|---|---|
 | Preflight | `00-preflight.sh` | Tools, cluster health, default StorageClass, free ports, token present |
+| Cluster DNS | `05-cluster-dns.sh` | Gives CoreDNS fallback resolvers and a longer, stale-serving cache — Docker Desktop's DNS forwarder drops lookups under load |
 | Concourse secrets | `10-concourse-secrets.sh` | Generates signing/SSH keys + admin and DB passwords straight into Kubernetes Secrets |
 | Concourse | `20-concourse.sh` | Helm install of web + 2 workers + Postgres; waits for the API |
 | Argo CD | `30-argocd.sh` | Helm install; applies `argocd/projects` and `argocd/apps` |
@@ -308,6 +309,11 @@ reads `((name))` anywhere in a pipeline as a variable — including shell arithm
 `$((end-start))`; adding spaces does not help, any `((`…`))` pair is parsed. In inline scripts use
 `expr` instead, or move the script to a file under `ci/scripts/`, which is not interpolated.
 `make check` catches this.
+
+**`Could not resolve host` while the machine is awake.** CoreDNS's only stock upstream is Docker
+Desktop's forwarder (`192.168.65.254`), which times out under load — look for `i/o timeout` in
+`kubectl -n kube-system logs -l k8s-app=kube-dns`. `make dns` fixes it (bootstrap runs it); a
+cluster reset reverts it.
 
 **Builds `errored` with `TLS handshake timeout` / `unexpected EOF` / `image fetching failed` while
 the machine was awake.** Too many large downloads at once (typically right after a cluster reset).

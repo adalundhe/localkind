@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-.PHONY: help bootstrap preflight concourse argocd credentials login secrets warm pipelines access open status focal-invitations slates-identities check
+.PHONY: help bootstrap preflight dns concourse argocd credentials login secrets warm pipelines access open status focal-invitations slates-identities check
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -12,6 +12,9 @@ bootstrap: ## Empty cluster -> working platform (run this first, and after any c
 
 preflight: ## Check tools, cluster, ports and DOCKER_PAT without changing anything
 	@scripts/00-preflight.sh
+
+dns: ## Harden CoreDNS (fallback resolvers + longer cache); re-applied by bootstrap after a reset
+	@scripts/05-cluster-dns.sh
 
 concourse: ## Install/upgrade Concourse (after editing concourse/values.yaml)
 	@scripts/10-concourse-secrets.sh && scripts/20-concourse.sh

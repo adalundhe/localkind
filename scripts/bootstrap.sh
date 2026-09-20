@@ -7,6 +7,7 @@ here="$(dirname "$0")"
 step() { printf '\n\033[1m── %s ──\033[0m\n' "$1"; shift; "$@"; }
 
 step "Preflight"                       "$here/00-preflight.sh"
+step "Cluster DNS"                     "$here/05-cluster-dns.sh"
 step "Concourse: keys + passwords"     "$here/10-concourse-secrets.sh"
 step "Concourse: install"              "$here/20-concourse.sh"
 step "Argo CD: install + applications" "$here/30-argocd.sh"
