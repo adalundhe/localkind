@@ -6,7 +6,7 @@
 #   scripts/access.sh --copy concourse copy that UI's password to the clipboard, print nothing secret
 #   scripts/access.sh --copy argocd
 #   scripts/access.sh --copy kiali     (Kiali logs in with a token, not a password)
-#   scripts/access.sh --copy grafana | chaos
+#   scripts/access.sh --copy grafana | chaos | headlamp
 #   scripts/access.sh --open           also open the UIs in the browser
 #
 # Passwords are generated at install time and live only in Kubernetes Secrets:
@@ -15,6 +15,7 @@
 #   istio-system/kiali-login-token         (token)
 #   istio-system/grafana-admin             (GF_SECURITY_ADMIN_PASSWORD; username is "admin")
 #   chaos-mesh/chaos-manager-token         (token)
+#   headlamp/headlamp-admin-token          (token, cluster-admin)
 . "$(dirname "$0")/lib.sh"
 need kubectl
 
@@ -24,7 +25,7 @@ while [ $# -gt 0 ]; do
     --no-passwords) show_passwords=0 ;;
     --copy) copy="${2:-}"; shift ;;
     --open) open_ui=1 ;;
-    -h|--help) sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) die "unknown argument: $1 (try --help)" ;;
   esac
   shift
@@ -35,6 +36,7 @@ argocd_pw()    { secret_value "$ARGOCD_NAMESPACE" argocd-initial-admin-secret pa
 kiali_token()  { secret_value "$ISTIO_NAMESPACE" kiali-login-token token; }
 grafana_pw()   { secret_value "$ISTIO_NAMESPACE" grafana-admin GF_SECURITY_ADMIN_PASSWORD; }
 chaos_token()  { secret_value "$CHAOS_MESH_NAMESPACE" chaos-manager-token token; }
+headlamp_token() { secret_value "$HEADLAMP_NAMESPACE" headlamp-admin-token token; }
 
 if [ -n "$copy" ]; then
   need pbcopy
@@ -44,7 +46,8 @@ if [ -n "$copy" ]; then
     kiali)     kiali_token  | pbcopy; ok "Kiali login token copied to the clipboard" ;;
     grafana)   grafana_pw   | pbcopy; ok "Grafana password for 'admin' copied to the clipboard" ;;
     chaos)     chaos_token  | pbcopy; ok "Chaos Mesh dashboard token copied to the clipboard" ;;
-    *) die "--copy expects one of: concourse argocd kiali grafana chaos" ;;
+    headlamp)  headlamp_token | pbcopy; ok "Headlamp login token (cluster-admin) copied to the clipboard" ;;
+    *) die "--copy expects one of: concourse argocd kiali grafana chaos headlamp" ;;
   esac
   exit 0
 fi
@@ -72,6 +75,11 @@ field URL      "$KIALI_URL/kiali"
 field login    "token  (scripts/access.sh --copy kiali puts it on the clipboard)"
 field token    "$(pw kiali_token)"
 
+printf '\n\033[1mHeadlamp (cluster UI)\033[0m  (%s)\n' "$(status "$HEADLAMP_URL")"
+field URL      "$HEADLAMP_URL"
+field login    "token  (scripts/access.sh --copy headlamp)"
+field token    "$(pw headlamp_token)"
+
 printf '\n\033[1mGrafana\033[0m  (%s)\n' "$(status "$GRAFANA_URL/api/health")"
 field URL      "$GRAFANA_URL"
 field username "admin"
@@ -97,5 +105,5 @@ EOF
 
 if [ "$open_ui" = 1 ]; then
   need open
-  open "$CONCOURSE_URL"; open "$ARGOCD_URL"; open "$KIALI_URL/kiali"; open "$GRAFANA_URL"; open "$CHAOS_MESH_URL"
+  open "$CONCOURSE_URL"; open "$ARGOCD_URL"; open "$KIALI_URL/kiali"; open "$GRAFANA_URL"; open "$CHAOS_MESH_URL"; open "$HEADLAMP_URL"
 fi

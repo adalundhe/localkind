@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-.PHONY: help bootstrap preflight dns concourse argocd istio kiali grafana metrics-server chaos-mesh tilt credentials login secrets warm pipelines access open status focal-invitations slates-identities check
+.PHONY: help bootstrap preflight dns concourse argocd istio kiali grafana headlamp metrics-server chaos-mesh tilt credentials login secrets warm pipelines access open status focal-invitations slates-identities check
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -30,6 +30,9 @@ kiali: ## Install/upgrade Kiali (the Istio UI) + Prometheus
 
 grafana: ## Install/upgrade Grafana with Istio's dashboards (generated admin password)
 	@scripts/38-grafana.sh
+
+headlamp: ## Install/upgrade Headlamp, the general cluster UI (token login)
+	@scripts/34-headlamp.sh
 
 metrics-server: ## Install/upgrade metrics-server (kubectl top, HPAs)
 	@scripts/32-metrics-server.sh

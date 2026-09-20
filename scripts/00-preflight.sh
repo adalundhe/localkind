@@ -38,6 +38,7 @@ port_check "$CONCOURSE_PORT" "$CONCOURSE_NAMESPACE" "${CONCOURSE_RELEASE}-web"
 port_check "$ARGOCD_PORT" "$ARGOCD_NAMESPACE" "${ARGOCD_RELEASE}-server"
 port_check "$KIALI_PORT" "$ISTIO_NAMESPACE" kiali
 port_check "$GRAFANA_PORT" "$ISTIO_NAMESPACE" grafana
+port_check "$HEADLAMP_PORT" "$HEADLAMP_NAMESPACE" headlamp
 port_check 2333 "$CHAOS_MESH_NAMESPACE" chaos-dashboard
 ok "ports $CONCOURSE_PORT (Concourse), $ARGOCD_PORT (Argo CD), $KIALI_PORT (Kiali), $GRAFANA_PORT (Grafana) and 2333 (Chaos Mesh) are available"
 

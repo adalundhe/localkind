@@ -55,6 +55,13 @@ export ISTIO_NAMESPACE ISTIO_VERSION GATEWAY_API_VERSION KIALI_VERSION KIALI_POR
 : "${CHAOS_MESH_VERSION:=2.8.4}"
 : "${CHAOS_MESH_URL:=http://localhost:2333}"   # the chart fixes the dashboard port at 2333
 
+# Headlamp: general cluster UI.
+: "${HEADLAMP_NAMESPACE:=headlamp}"
+: "${HEADLAMP_CHART_VERSION:=0.45.0}"
+: "${HEADLAMP_PORT:=8083}"
+: "${HEADLAMP_URL:=http://localhost:${HEADLAMP_PORT}}"
+export HEADLAMP_NAMESPACE HEADLAMP_CHART_VERSION HEADLAMP_PORT HEADLAMP_URL
+
 # --- Host dev tools -----------------------------------------------------------
 : "${TILT_VERSION:=0.37.7}"
 : "${TILT_BIN:=$HOME/.local/bin/tilt}"

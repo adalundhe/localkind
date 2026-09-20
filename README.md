@@ -29,6 +29,7 @@ write access to any Git repo.
 | Concourse | <http://localhost:8080> | `admin` / generated |
 | Argo CD | <http://localhost:8081> | `admin` / generated |
 | Kiali (Istio UI) | <http://localhost:8082/kiali> | generated token |
+| Headlamp (cluster UI) | <http://localhost:8083> | generated token (cluster-admin) |
 | Grafana | <http://localhost:8084> | `admin` / generated |
 | Chaos Mesh | <http://localhost:2333> | any name + generated token |
 
@@ -212,6 +213,21 @@ and scheduled/`Workflow` experiments work the same way; the dashboard at
 <http://localhost:2333> builds them interactively (log in with any name plus `CHAOS_MESH_TOKEN`).
 The chaos daemon does not run on the control-plane node, which is fine: workloads do not either.
 
+### Cluster UI (Headlamp)
+
+<http://localhost:8083> shows the whole cluster — the other UIs each show one slice. Workloads and
+why they are Pending or crash-looping, events, logs, pod exec, ConfigMaps/Secrets, CRDs (Argo CD
+Applications, Istio resources, chaos experiments) and per-pod CPU/memory. Log in with
+`HEADLAMP_TOKEN` from `.secrets/credentials.env` (`scripts/access.sh --copy headlamp`). That token
+is **cluster-admin** — treat it like a password. Headlamp's own pod is unprivileged; what you can
+do is decided by the token you log in with.
+
+Right after a bootstrap its Events view shows a handful of orange warnings — an image pull that
+timed out once on a slow link, "readiness probe failed: connection refused" from containers still
+starting. With a count of 1–3 and an old "last seen" they are history, not failures; Kubernetes
+drops events after an hour, or clear them with
+`kubectl delete events -A --field-selector type=Warning`.
+
 ### Metrics
 
 `kubectl top nodes` / `kubectl top pods -A` work (metrics-server). Grafana at
@@ -375,6 +391,7 @@ platform's own admin password, never the Docker Hub token).
 | Concourse DB password | `concourse/concourse-db` | `10-concourse-secrets.sh` |
 | Argo CD admin login | `argocd/argocd-initial-admin-secret` | Argo CD itself |
 | Kiali login token | `istio-system/kiali-login-token` | `37-kiali.sh` |
+| Headlamp login token (cluster-admin) | `headlamp/headlamp-admin-token` | `34-headlamp.sh` |
 | Grafana admin login | `istio-system/grafana-admin` | `38-grafana.sh` |
 | Chaos Mesh dashboard token | `chaos-mesh/chaos-manager-token` | `39-chaos-mesh.sh` |
 | slates pod identities | the live `slates` Application (`spec.source.helm.values`) | `apps/slates-identities.sh` |

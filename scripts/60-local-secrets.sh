@@ -46,6 +46,11 @@ if secret_exists "$CHAOS_MESH_NAMESPACE" chaos-manager-token; then
   chaos_token="$(secret_value "$CHAOS_MESH_NAMESPACE" chaos-manager-token token)"
 fi
 
+headlamp_token=""
+if secret_exists "$HEADLAMP_NAMESPACE" headlamp-admin-token; then
+  headlamp_token="$(secret_value "$HEADLAMP_NAMESPACE" headlamp-admin-token token)"
+fi
+
 umask 077
 mkdir -p "$dir"; chmod 700 "$dir"
 tmp="$(mktemp "$dir/.credentials.XXXXXX")"
@@ -75,8 +80,12 @@ GRAFANA_PASSWORD=$grafana_pw
 # Chaos Mesh dashboard: "Name" can be anything; paste CHAOS_MESH_TOKEN as the token.
 CHAOS_MESH_URL=$CHAOS_MESH_URL
 CHAOS_MESH_TOKEN=$chaos_token
+
+# Headlamp (cluster UI): paste HEADLAMP_TOKEN at the login screen. It is cluster-admin.
+HEADLAMP_URL=$HEADLAMP_URL
+HEADLAMP_TOKEN=$headlamp_token
 EOF
-unset concourse_pw argocd_pw kiali_token grafana_pw chaos_token
+unset concourse_pw argocd_pw kiali_token grafana_pw chaos_token headlamp_token
 chmod 600 "$tmp"
 mv "$tmp" "$file"
 
