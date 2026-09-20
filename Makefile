@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-.PHONY: help bootstrap preflight concourse argocd credentials login secrets pipelines access open status focal-invitations slates-identities check
+.PHONY: help bootstrap preflight concourse argocd credentials login secrets warm pipelines access open status focal-invitations slates-identities check
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -27,6 +27,9 @@ login: ## Install fly + argocd CLIs if needed and log both in (fly tokens last 2
 
 secrets: ## Refresh the git-ignored .secrets/credentials.env from the cluster
 	@scripts/60-local-secrets.sh
+
+warm: ## Pre-pull every pipeline base image into Concourse's cache, one at a time
+	@scripts/65-warm-images.sh
 
 pipelines: ## Set + unpause every pipeline from the working tree
 	@scripts/70-pipelines.sh

@@ -26,6 +26,15 @@ else
   warn "fly not installed — skipped pipeline validation (scripts/50-cli-login.sh installs it)"
 fi
 
+# Concourse parses ((name)) anywhere in a pipeline as a variable — shell arithmetic included.
+arith="$(grep -n -F '$((' pipelines/*.yml ci/tasks/*.yml 2>/dev/null || true)"
+if [ -n "$arith" ]; then
+  warn "shell arithmetic \$(( )) inside pipeline YAML is parsed as a Concourse variable — use expr or a ci/scripts file:"
+  printf '%s\n' "$arith" | sed 's/^/      /' >&2; fail=1
+else
+  ok "no \$(( )) arithmetic in pipeline YAML"
+fi
+
 log "Secret scan (everything git tracks or would track)"
 files="$(mktemp)"; needles="$(mktemp)"; chmod 600 "$needles"
 trap 'rm -f "$files" "$needles"' EXIT

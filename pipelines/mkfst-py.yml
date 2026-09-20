@@ -11,19 +11,27 @@ resources:
     uri: https://github.com/hyper-light/mkfst-py.git
     branch: main
 
+- name: python-image
+  type: registry-image
+  icon: docker
+  check_every: 24h            # pinned tag; fetched as a resource so a flaky pull can be retried
+  source: {repository: python, tag: "3.13-slim"}
+
 jobs:
 - name: lint
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+    - get: python-image
+      attempts: 3
   - task: ruff
+    image: python-image
     timeout: 20m
     config: &py-task
       platform: linux
-      image_resource:
-        type: registry-image
-        source: {repository: python, tag: "3.13"}
       inputs:
       - name: repo
       caches:
@@ -45,9 +53,14 @@ jobs:
 - name: test
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+    - get: python-image
+      attempts: 3
   - task: pytest
+    image: python-image
     timeout: 30m
     config:
       <<: *py-task
@@ -65,10 +78,15 @@ jobs:
 - name: build
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
-    passed: [lint, test]
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+      passed: [lint, test]
+    - get: python-image
+      attempts: 3
   - task: build-and-check
+    image: python-image
     timeout: 20m
     config:
       <<: *py-task

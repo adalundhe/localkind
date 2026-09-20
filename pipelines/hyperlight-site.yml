@@ -12,19 +12,27 @@ resources:
     uri: https://github.com/hyper-light/hyperlight-site.git
     branch: main
 
+- name: node-image
+  type: registry-image
+  icon: docker
+  check_every: 24h            # pinned tag; fetched as a resource so a flaky pull can be retried
+  source: {repository: node, tag: "24-slim"}
+
 jobs:
 - name: lint
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+    - get: node-image
+      attempts: 3
   - task: eslint-prettier
+    image: node-image
     timeout: 20m
     config: &node-task
       platform: linux
-      image_resource:
-        type: registry-image
-        source: {repository: node, tag: "24"}   # README: Node 22+; @types/node is ^24
       inputs:
       - name: repo
       caches:
@@ -47,9 +55,14 @@ jobs:
 - name: test
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+    - get: node-image
+      attempts: 3
   - task: typecheck-and-unit
+    image: node-image
     timeout: 30m
     config:
       <<: *node-task
@@ -68,9 +81,14 @@ jobs:
 - name: build
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+    - get: node-image
+      attempts: 3
   - task: next-build
+    image: node-image
     timeout: 30m
     config:
       <<: *node-task

@@ -39,6 +39,24 @@ resources:
     username: ((docker.username))
     password: ((docker.password))
 
+- name: rust-image
+  type: registry-image
+  icon: docker
+  check_every: 24h            # pinned tag; fetched as a resource so a flaky pull can be retried
+  source: {repository: rust, tag: "1.98.0"}
+
+- name: alpine-image
+  type: registry-image
+  icon: docker
+  check_every: 24h            # pinned tag; fetched as a resource so a flaky pull can be retried
+  source: {repository: alpine, tag: "3.22"}
+
+- name: oci-build-task-image
+  type: registry-image
+  icon: docker
+  check_every: 24h
+  source: {repository: concourse/oci-build-task}
+
 jobs:
 # serial_groups: one cargo job at a time per pipeline. Three concurrent LTO builds would fight over
 # the same worker's CPU/RAM budget and make the timing-sensitive tests flakier than they already are.
@@ -46,15 +64,17 @@ jobs:
   serial_groups: [cargo]
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+    - get: rust-image
+      attempts: 3
   - task: lint
+    image: rust-image
     timeout: 45m
     config: &rust-task          # shared by the test job below (it overrides `run`)
       platform: linux
-      image_resource:
-        type: registry-image
-        source: {repository: rust, tag: "1.98.0"}   # == rust-toolchain.toml channel
       inputs:
       - name: repo
       caches:
@@ -80,9 +100,14 @@ jobs:
   serial_groups: [cargo]
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+    - get: rust-image
+      attempts: 3
   - task: test
+    image: rust-image
     timeout: 1h30m
     config:
       <<: *rust-task
@@ -107,29 +132,39 @@ jobs:
   - in_parallel:
     - get: repo
       trigger: true
+      attempts: 3
       # GATE. `[]` publishes every commit on main; `[lint, test]` publishes only green commits.
       # Open as of 2026-09-19 because main is red upstream (a different timing-sensitive test
       # fails each run, e.g. crates/server/tests/recovery.rs) and nothing would ever deploy.
       passed: []
     - get: localkind
+      attempts: 3
+    - get: alpine-image
+      attempts: 3
+    - get: oci-build-task-image
+      attempts: 3
   - task: version
+    image: alpine-image
     file: localkind/ci/tasks/version.yml
     params:
       VERSION_FILE: Cargo.toml
       SOURCE_URL: https://github.com/hyper-light/slates
   - task: build-image
+    image: oci-build-task-image
     privileged: true
     timeout: 1h
     file: localkind/ci/tasks/build-image.yml
     params:
       DOCKERFILE: repo/Dockerfile
   - put: image
+    attempts: 3
     inputs: [image, version]
     params:
       image: image/image.tar
       additional_tags: version/tags
     get_params: {skip_download: true}
   - task: publish-chart
+    image: alpine-image
     file: localkind/ci/tasks/publish-chart.yml
     params:
       CHART_PATH: deploy/helm/slates

@@ -68,6 +68,7 @@ That one command takes an empty cluster to a working platform, and is safe to re
 | Docker Hub credentials | `40-registry-credentials.sh` | Verifies the token with Docker Hub (incl. push scope), then installs it for pipelines and Argo CD |
 | CLIs | `50-cli-login.sh` | Installs `fly` + `argocd` to `~/.local/bin` and logs both in |
 | Local credentials | `60-local-secrets.sh` | Writes `.secrets/credentials.env` |
+| Warm image cache | `65-warm-images.sh` | Pulls every pipeline base image into Concourse's cache **one at a time** (see *Concourse on kind*) |
 | Pipelines | `70-pipelines.sh` | Sets and unpauses every pipeline in `pipelines/` |
 
 If the Docker Hub token is rejected, bootstrap still brings everything up (CI runs; only pushes
@@ -229,6 +230,15 @@ AppProject only allows charts from our Docker Hub namespace, deployed into this 
   Within a Rust pipeline `serial_groups` runs one cargo job at a time.
 - Build caches (`cargo-home`, `target`, uv/pip/npm/go caches, BuildKit layers) are Concourse task
   caches: per worker, per job. The first build of anything is cold.
+- **Cold starts are serialised on purpose.** Unpausing a cold cluster starts ~18 jobs that each
+  pull a 100-600 MB image at once, and Docker Desktop's network path does not survive that many
+  parallel flows: pulls stall, then die with `TLS handshake timeout`, `unexpected EOF` or DNS
+  errors. So bootstrap pre-pulls each base image sequentially (`make warm`) before unpausing.
+  Concourse keys the cache by image source + digest — shared by every pipeline — and streams it
+  worker-to-worker inside the cluster, so each image crosses the NAT once.
+- For the same reason base images are pipeline *resources* fetched with `attempts: 3`, as are git
+  clones and pushes. The tasks themselves have no `attempts`: a flaky download retries, a red test
+  suite fails once. Python and Node use `-slim` images (~60 MB instead of ~400 MB).
 - Images are built with `concourse/oci-build-task` (BuildKit) for **linux/arm64** on Apple Silicon.
   For multi-arch, see the comment in `ci/tasks/build-image.yml` — the foreign arch is emulated.
 - The UIs are `LoadBalancer` Services. Docker Desktop's kind cloud-provider publishes those on
@@ -284,6 +294,24 @@ update `~/.zshrc`. Then `make credentials`.
 **An Argo CD app shows `ComparisonError … unable to get tags`.** Nothing has been published for it
 yet — it clears itself after the first green `publish`. For slates it can also mean identities are
 missing: `make slates-identities`.
+
+**Lots of builds `errored` at once with `Could not resolve host` / `no such host` / `i/o timeout`.**
+The Mac went to sleep. Builds run in Docker Desktop's VM, which freezes with the machine; during
+macOS dark wakes it runs for a few seconds *without* network, and whatever starts then fails on DNS.
+Confirm with `pmset -g log | grep -E ' (Sleep|Wake|DarkWake) '` and compare to the build times. On
+battery the default idle sleep is very short. Keep the machine awake while CI runs —
+`caffeinate -i` in a spare terminal (closing the lid still sleeps it) — then re-trigger:
+`fly -t hl trigger-job -j <pipeline>/<job>`. Nothing needs repairing afterwards.
+
+**`failed to interpolate task config: undefined vars: …`** on a script you just edited. Concourse
+reads `((name))` anywhere in a pipeline as a variable — including shell arithmetic like
+`$((end-start))`; adding spaces does not help, any `((`…`))` pair is parsed. In inline scripts use
+`expr` instead, or move the script to a file under `ci/scripts/`, which is not interpolated.
+`make check` catches this.
+
+**Builds `errored` with `TLS handshake timeout` / `unexpected EOF` / `image fetching failed` while
+the machine was awake.** Too many large downloads at once (typically right after a cluster reset).
+`make warm` pulls the base images one at a time, then re-trigger the jobs.
 
 **Builds sit at "all workers are busy".** That is the task cap doing its job. Raise
 `limitActiveTasks` or `worker.replicas` in `concourse/values.yaml`, then `make concourse`.

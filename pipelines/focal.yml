@@ -41,6 +41,24 @@ resources:
     username: ((docker.username))
     password: ((docker.password))
 
+- name: rust-image
+  type: registry-image
+  icon: docker
+  check_every: 24h            # pinned tag; fetched as a resource so a flaky pull can be retried
+  source: {repository: rust, tag: "1.94.1"}
+
+- name: alpine-image
+  type: registry-image
+  icon: docker
+  check_every: 24h            # pinned tag; fetched as a resource so a flaky pull can be retried
+  source: {repository: alpine, tag: "3.22"}
+
+- name: oci-build-task-image
+  type: registry-image
+  icon: docker
+  check_every: 24h
+  source: {repository: concourse/oci-build-task}
+
 jobs:
 # serial_groups: one cargo job at a time per pipeline, so lint/test/publish don't fight over the
 # same worker's CPU/RAM budget.
@@ -48,15 +66,17 @@ jobs:
   serial_groups: [cargo]
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+    - get: rust-image
+      attempts: 3
   - task: lint
+    image: rust-image
     timeout: 45m
     config: &rust-task          # shared by the test job below (it overrides `run`)
       platform: linux
-      image_resource:
-        type: registry-image
-        source: {repository: rust, tag: "1.94.1"}   # == rust-toolchain.toml channel
       inputs:
       - name: repo
       caches:
@@ -71,7 +91,7 @@ jobs:
         - |
           export CARGO_HOME="$PWD/cargo-home" CARGO_TARGET_DIR="$PWD/target"
           # Without protoc, protobuf-build falls back to compiling protobuf from C++ source.
-          apt-get update -qq && apt-get install -y -qq --no-install-recommends protobuf-compiler python3 >/dev/null
+          apt-get -o Acquire::Retries=5 update -qq && apt-get -o Acquire::Retries=5 install -y -qq --no-install-recommends protobuf-compiler python3 >/dev/null
           cd repo
           set -x
           python3 scripts/check-contracts.py
@@ -83,9 +103,14 @@ jobs:
   serial_groups: [cargo]
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+    - get: rust-image
+      attempts: 3
   - task: test
+    image: rust-image
     timeout: 2h
     config:
       <<: *rust-task
@@ -95,7 +120,7 @@ jobs:
         - -euc
         - |
           export CARGO_HOME="$PWD/cargo-home" CARGO_TARGET_DIR="$PWD/target"
-          apt-get update -qq && apt-get install -y -qq --no-install-recommends protobuf-compiler python3 >/dev/null
+          apt-get -o Acquire::Retries=5 update -qq && apt-get -o Acquire::Retries=5 install -y -qq --no-install-recommends protobuf-compiler python3 >/dev/null
           cd repo
           set -x
           # --test-threads=4 is upstream's own setting: the integration tests spawn multi-node
@@ -110,15 +135,23 @@ jobs:
   - in_parallel:
     - get: repo
       trigger: true
+      attempts: 3
       # GATE. `[lint, test]` publishes only green commits; `[]` publishes every commit.
       passed: [lint, test]
     - get: localkind
+      attempts: 3
+    - get: alpine-image
+      attempts: 3
+    - get: oci-build-task-image
+      attempts: 3
   - task: version
+    image: alpine-image
     file: localkind/ci/tasks/version.yml
     params:
       VERSION_FILE: Cargo.toml
       SOURCE_URL: https://github.com/hyper-light/focal
   - task: build-image
+    image: oci-build-task-image
     privileged: true
     timeout: 1h30m
     file: localkind/ci/tasks/build-image.yml
@@ -126,12 +159,14 @@ jobs:
       # Context is the repo root (the Dockerfile does `COPY . .`). Static musl binary on scratch.
       DOCKERFILE: repo/deploy/container/Dockerfile
   - put: image
+    attempts: 3
     inputs: [image, version]
     params:
       image: image/image.tar
       additional_tags: version/tags
     get_params: {skip_download: true}
   - task: publish-chart
+    image: alpine-image
     file: localkind/ci/tasks/publish-chart.yml
     params:
       CHART_PATH: deploy/helm/focal

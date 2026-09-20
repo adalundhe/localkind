@@ -13,20 +13,28 @@ resources:
     uri: https://github.com/hyper-light/vorpal.git
     branch: main
 
+- name: rust-image
+  type: registry-image
+  icon: docker
+  check_every: 24h            # pinned tag; fetched as a resource so a flaky pull can be retried
+  source: {repository: rust, tag: "1.98.0"}
+
 jobs:
 - name: lint
   serial_groups: [cargo]
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+    - get: rust-image
+      attempts: 3
   - task: lint
+    image: rust-image
     timeout: 1h
     config: &rust-task          # shared by the test job below (it overrides `run`)
       platform: linux
-      image_resource:
-        type: registry-image
-        source: {repository: rust, tag: "1.98.0"}   # == rust-toolchain.toml channel
       inputs:
       - name: repo
       caches:
@@ -43,7 +51,7 @@ jobs:
         - |
           export CARGO_HOME="$PWD/cargo-home" CARGO_TARGET_DIR="$PWD/target"
           # python3: pyo3's build script. g++/make (tree-sitter C++ scanners, jemalloc) ship in the image.
-          apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 python3-dev >/dev/null
+          apt-get -o Acquire::Retries=5 update -qq && apt-get -o Acquire::Retries=5 install -y -qq --no-install-recommends python3 python3-dev >/dev/null
           cd repo
           set -x
           cargo clippy --workspace --all-targets -- -D warnings
@@ -53,9 +61,14 @@ jobs:
   serial_groups: [cargo]
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+    - get: rust-image
+      attempts: 3
   - task: test
+    image: rust-image
     timeout: 1h30m
     config:
       <<: *rust-task
@@ -65,7 +78,7 @@ jobs:
         - -euc
         - |
           export CARGO_HOME="$PWD/cargo-home" CARGO_TARGET_DIR="$PWD/target"
-          apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 python3-dev >/dev/null
+          apt-get -o Acquire::Retries=5 update -qq && apt-get -o Acquire::Retries=5 install -y -qq --no-install-recommends python3 python3-dev >/dev/null
           cd repo
           set -x
           cargo test --workspace

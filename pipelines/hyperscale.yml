@@ -42,19 +42,39 @@ resources:
     username: ((docker.username))
     password: ((docker.password))
 
+- name: uv-image
+  type: registry-image
+  icon: docker
+  check_every: 24h            # pinned tag; fetched as a resource so a flaky pull can be retried
+  source: {repository: ghcr.io/astral-sh/uv, tag: "python3.13-bookworm-slim"}
+
+- name: alpine-image
+  type: registry-image
+  icon: docker
+  check_every: 24h            # pinned tag; fetched as a resource so a flaky pull can be retried
+  source: {repository: alpine, tag: "3.22"}
+
+- name: oci-build-task-image
+  type: registry-image
+  icon: docker
+  check_every: 24h
+  source: {repository: concourse/oci-build-task}
+
 jobs:
 - name: test
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+    - get: uv-image
+      attempts: 3
   - task: unit-tests
+    image: uv-image
     timeout: 45m
     config: &uv-task
       platform: linux
-      image_resource:
-        type: registry-image
-        source: {repository: ghcr.io/astral-sh/uv, tag: python3.13-bookworm}
       inputs:
       - name: repo
       caches:
@@ -75,9 +95,14 @@ jobs:
 - name: package
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+    - get: uv-image
+      attempts: 3
   - task: build-and-check
+    image: uv-image
     timeout: 20m
     config:
       <<: *uv-task
@@ -99,22 +124,31 @@ jobs:
   - in_parallel:
     - get: repo
       trigger: true
+      attempts: 3
       # GATE. Requires the package to build. Add `test` once tests/unit is green — as of
       # 2026-09-19 it is not (202 failures from test/source drift, e.g. GateJobHandler's signature).
       passed: [package]
     - get: localkind
+      attempts: 3
+    - get: alpine-image
+      attempts: 3
+    - get: oci-build-task-image
+      attempts: 3
   - task: version
+    image: alpine-image
     file: localkind/ci/tasks/version.yml
     params:
       VERSION_FILE: pyproject.toml
       SOURCE_URL: https://github.com/hyper-light/hyperscale
   - task: build-image
+    image: oci-build-task-image
     privileged: true
     timeout: 45m
     file: localkind/ci/tasks/build-image.yml
     params:
       DOCKERFILE: repo/docker/images/Dockerfile
   - put: image
+    attempts: 3
     inputs: [image, version]
     params:
       image: image/image.tar

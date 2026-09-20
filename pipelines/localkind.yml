@@ -21,6 +21,7 @@ jobs:
   plan:
   - get: localkind
     trigger: true
+    attempts: 3
   - set_pipeline: self
     file: localkind/pipelines/localkind.yml
     vars: {docker_user: ((docker_user))}

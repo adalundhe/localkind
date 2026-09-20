@@ -17,6 +17,7 @@ step "Docker Hub credentials"          "$here/40-registry-credentials.sh" || reg
 
 step "CLIs: install + log in"          "$here/50-cli-login.sh"
 step "Local credentials file"          "$here/60-local-secrets.sh"
+step "Base images: warm the cache"     "$here/65-warm-images.sh"
 step "Pipelines"                       "$here/70-pipelines.sh"
 
 printf '\n'

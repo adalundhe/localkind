@@ -13,20 +13,28 @@ resources:
     uri: https://github.com/hyper-light/sylk.git
     branch: main
 
+- name: golang-image
+  type: registry-image
+  icon: docker
+  check_every: 24h            # pinned tag; fetched as a resource so a flaky pull can be retried
+  source: {repository: golang, tag: "1.25"}
+
 jobs:
 - name: vet
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
-    params: {depth: 1}
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+      params: {depth: 1}
+    - get: golang-image
+      attempts: 3
   - task: go-vet
+    image: golang-image
     timeout: 45m
     config: &go-task
       platform: linux
-      image_resource:
-        type: registry-image
-        source: {repository: golang, tag: "1.25"}   # go.mod: go 1.25.0
       inputs:
       - name: repo
       caches:
@@ -41,7 +49,7 @@ jobs:
         - |
           export GOCACHE="$PWD/go-build-cache" GOMODCACHE="$PWD/go-mod-cache" GOFLAGS=-buildvcs=false
           # Same packages upstream installs on Linux runners.
-          apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+          apt-get -o Acquire::Retries=5 update -qq && apt-get -o Acquire::Retries=5 install -y -qq --no-install-recommends \
             build-essential pkg-config libfuse-dev libfuse3-dev >/dev/null
           cd repo
           set -x
@@ -50,10 +58,15 @@ jobs:
 - name: test
   build_log_retention: {builds: 30}
   plan:
-  - get: repo
-    trigger: true
-    params: {depth: 1}
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+      params: {depth: 1}
+    - get: golang-image
+      attempts: 3
   - task: go-test
+    image: golang-image
     timeout: 1h30m
     config:
       <<: *go-task
@@ -63,7 +76,7 @@ jobs:
         - -euc
         - |
           export GOCACHE="$PWD/go-build-cache" GOMODCACHE="$PWD/go-mod-cache" GOFLAGS=-buildvcs=false
-          apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+          apt-get -o Acquire::Retries=5 update -qq && apt-get -o Acquire::Retries=5 install -y -qq --no-install-recommends \
             build-essential pkg-config libfuse-dev libfuse3-dev >/dev/null
           cd repo
           set -x
