@@ -32,6 +32,9 @@ jobs:
     - set_pipeline: focal
       file: localkind/pipelines/focal.yml
       vars: {docker_user: ((docker_user))}
+    - set_pipeline: mantle
+      file: localkind/pipelines/mantle.yml
+      vars: {docker_user: ((docker_user))}
     - set_pipeline: hyperscale
       file: localkind/pipelines/hyperscale.yml
       vars: {docker_user: ((docker_user))}

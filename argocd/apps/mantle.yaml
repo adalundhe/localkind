@@ -1,0 +1,49 @@
+# mantle, continuously deployed from the chart Concourse publishes (pipelines/mantle.yml).
+#
+# targetRevision ">=0.0.0-0" means "the highest version, pre-releases included" — always the
+# newest CI build. See argocd/apps/focal.yaml for the full explanation.
+#
+# ONE-TIME STEP: each founder pod installs its identity and keys from a Secret, <release>-N-founder,
+# which the chart deliberately never generates (mantle's docs/design/kubernetes.md §3), so the pods
+# wait in Init until the Secrets exist. Make the cell and its Secrets once with
+#     scripts/apps/mantle-init.sh
+# Key material goes from a 0700 temp dir straight into the cluster, never into this repo.
+#
+# The namespace stays out of the ambient mesh (it carries no istio.io/dataplane-mode label): a
+# founder's QUIC and plane are UDP the mesh does not carry, and its S3 listener's TCP is mantle's
+# own HTTP/1.1 door.
+# __DOCKER_USER__ is substituted from env.sh by scripts/30-argocd.sh.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mantle
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io   # deleting the app also deletes what it deployed
+spec:
+  project: hyper-light
+  source:
+    repoURL: registry-1.docker.io/__DOCKER_USER__
+    chart: mantle-chart
+    targetRevision: ">=0.0.0-0"
+    helm:
+      # Pods, their Services and their Secrets are named <release>-N, and each founder's reach is
+      # its Service's name: keep this "mantle".
+      releaseName: mantle
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mantle
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+    - CreateNamespace=true
+  ignoreDifferences:
+  # Kubernetes fills these in on StatefulSet PVC templates; without this the app never settles.
+  - group: apps
+    kind: StatefulSet
+    jqPathExpressions:
+    - .spec.volumeClaimTemplates[]?.apiVersion
+    - .spec.volumeClaimTemplates[]?.kind
+    - .spec.volumeClaimTemplates[]?.status

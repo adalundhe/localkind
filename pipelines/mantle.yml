@@ -1,0 +1,193 @@
+# hyper-light/mantle — Rust workspace, Dockerfile at the repo root, chart at deploy/helm/mantle.
+#
+#   lint ─┐
+#   test ─┴─(gate)─> publish: version -> image -> docker.io/((docker_user))/mantle
+#                                              -> chart -> oci://registry-1.docker.io/((docker_user))/mantle-chart
+#                             Argo CD (argocd/apps/mantle.yaml) then rolls out the new chart version.
+#
+# Mirrors the Linux half of mantle's .github/workflows/ci.yml `gates`, within a worker's 8 CPUs and
+# 24 GiB. Not ported, by necessity: the macOS and Windows jobs, the constrained lanes (taskset on a
+# runner's own CPUs) and the `kind-cell` lane (a Docker daemon and a kind cluster of its own); the
+# chart's gates (helm lint and its golden render) run there, under the helm they pin.
+
+resources:
+- name: repo
+  type: git
+  icon: github
+  check_every: 2m
+  source:
+    uri: https://github.com/hyper-light/mantle.git
+    branch: main
+
+- name: localkind
+  type: git
+  icon: cog
+  check_every: 10m
+  source:
+    uri: https://github.com/adalundhe/localkind.git
+    branch: main
+    paths: [ci]
+
+- name: image
+  type: registry-image
+  icon: docker
+  check_every: never          # write-only from here; Argo CD is the consumer
+  source:
+    repository: ((docker_user))/mantle
+    tag: latest
+    username: ((docker.username))
+    password: ((docker.password))
+
+- name: rust-image
+  type: registry-image
+  icon: docker
+  check_every: 24h            # mantle's pinned toolchain (rust-toolchain.toml)
+  source: {repository: rust, tag: "1.98.1"}
+
+- name: alpine-image
+  type: registry-image
+  icon: docker
+  check_every: 24h
+  source: {repository: alpine, tag: "3.22"}
+
+- name: oci-build-task-image
+  type: registry-image
+  icon: docker
+  check_every: 24h
+  source: {repository: concourse/oci-build-task}
+
+jobs:
+# serial_groups: one cargo job at a time per pipeline, so the lint and the suites do not share a
+# worker's CPUs with each other's builds.
+- name: lint
+  serial_groups: [cargo]
+  build_log_retention: {builds: 30}
+  plan:
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+    - get: rust-image
+      attempts: 3
+  - task: lint
+    image: rust-image
+    timeout: 1h
+    config: &rust-task          # shared by the test job below (it overrides `run`)
+      platform: linux
+      inputs:
+      - name: repo
+      caches:
+      - path: cargo-home
+      - path: target
+      params:
+        CARGO_TERM_COLOR: always
+        CARGO_BUILD_JOBS: "8"
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export CARGO_HOME="$PWD/cargo-home" CARGO_TARGET_DIR="$PWD/target"
+          cd repo
+          set -x
+          rustup component add rustfmt clippy
+          python3 scripts/check-contracts.py
+          cargo fmt --all --check
+          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+          bash scripts/check-production.sh
+
+- name: test
+  serial_groups: [cargo]
+  build_log_retention: {builds: 30}
+  plan:
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+    - get: rust-image
+      attempts: 3
+  - task: test
+    image: rust-image
+    timeout: 2h
+    config:
+      <<: *rust-task
+      run:
+        path: bash
+        args:
+        - -euc
+        - |
+          export CARGO_HOME="$PWD/cargo-home" CARGO_TARGET_DIR="$PWD/target"
+          stock="$PWD/stock"
+          cd repo
+          set -x
+          # The stock S3 clients the suites run, as mantle's CI installs them (scripts/stock-clients.sh):
+          # boto3 pinned with every hash in a venv first on the PATH, and the AWS CLI v2 from AWS's own
+          # installer, both test tools only.
+          apt-get update -qq && apt-get install -y -qq --no-install-recommends unzip python3-venv
+          python3 -m venv "$stock/venv"
+          "$stock/venv/bin/python3" -m pip install --quiet --disable-pip-version-check --require-hashes \
+            --only-binary :all: --no-deps -r crates/mantle/tests/support/boto3-requirements.txt
+          curl --fail --silent --show-error --location \
+            "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "$stock/awscliv2.zip"
+          unzip -q "$stock/awscliv2.zip" -d "$stock"
+          "$stock/aws/install" --install-dir "$stock/aws-cli" --bin-dir "$stock/bin"
+          export PATH="$stock/venv/bin:$stock/bin:$PATH"
+          aws --version
+          # --no-fail-fast: a failing test binary does not hide the rest.
+          cargo test --workspace --locked --no-fail-fast
+          cargo test --manifest-path vendor/Cargo.toml --workspace --locked --no-fail-fast
+
+- name: publish
+  serial: true
+  serial_groups: [cargo]
+  build_log_retention: {builds: 30}
+  plan:
+  - in_parallel:
+    - get: repo
+      trigger: true
+      attempts: 3
+      # GATE: only a commit the lint and the suites passed is published.
+      passed: [lint, test]
+    - get: localkind
+      attempts: 3
+    - get: alpine-image
+      attempts: 3
+    - get: oci-build-task-image
+      attempts: 3
+  - task: version
+    image: alpine-image
+    file: localkind/ci/tasks/version.yml
+    params:
+      VERSION_FILE: Cargo.toml
+      SOURCE_URL: https://github.com/hyper-light/mantle
+  - task: build-image
+    image: oci-build-task-image
+    privileged: true
+    timeout: 1h30m
+    file: localkind/ci/tasks/build-image.yml
+    params:
+      DOCKERFILE: repo/Dockerfile
+  - put: image
+    attempts: 3
+    inputs: [image, version]
+    params:
+      image: image/image.tar
+      additional_tags: version/tags
+    get_params: {skip_download: true}
+  - task: publish-chart
+    image: alpine-image
+    file: localkind/ci/tasks/publish-chart.yml
+    params:
+      CHART_PATH: deploy/helm/mantle
+      CHART_NAME: mantle-chart
+      IMAGE_REPOSITORY: ((docker_user))/mantle
+      # nameOverride keeps the pods, Services and Secrets named as the un-renamed chart names them
+      # (<release>-N), which each founder's reach and Secret name.
+      VALUES_EXPR: >-
+        .image.repository = strenv(IMAGE_REPOSITORY) |
+        .image.tag = strenv(VERSION) |
+        .image.pullPolicy = "IfNotPresent" |
+        .nameOverride = "mantle"
+      REGISTRY_NAMESPACE: ((docker_user))
+      REGISTRY_USERNAME: ((docker.username))
+      REGISTRY_PASSWORD: ((docker.password))
