@@ -38,16 +38,43 @@ case "$reserve" in
 esac
 
 # The harness's image: the binary the cell runs, beside the stock S3 clients and kubectl at the
-# cluster's own version, imported into each node's containerd.
+# cluster's own version. Docker Desktop's kind nodes do not share this Mac's image store, nor show
+# as its containers, so the image is imported into each node's containerd by a pod pinned to that
+# node, holding its containerd socket, as `kind load` does through the node's container.
 image="$(k -n "$ns" get "statefulset/$release" -o jsonpath='{.spec.template.spec.containers[0].image}')"
 server="$(k version -o json | python3 -c 'import json, sys; print(json.load(sys.stdin)["serverVersion"]["gitVersion"])')"
 log "Building $harness from $mantle_dir on $image, kubectl $server"
 docker pull -q "$image" >/dev/null
 docker build -q -f "$mantle_dir/deploy/kind/harness.Dockerfile" --build-arg MANTLE="$image" \
   --build-arg KUBECTL="$server" -t "$harness" "$mantle_dir" >/dev/null
+tar="$(mktemp -d)/harness.tar"
+docker save -o "$tar" "$harness"
 for node in $(k get nodes -o jsonpath='{.items[*].metadata.name}'); do
-  docker save "$harness" | docker exec -i "$node" ctr -n k8s.io images import - >/dev/null
+  loader="mantle-image-loader-$node"
+  k -n "$ns" apply -f - >/dev/null <<YAML
+apiVersion: v1
+kind: Pod
+metadata: {name: $loader, namespace: $ns}
+spec:
+  nodeName: $node
+  restartPolicy: Never
+  tolerations: [{operator: Exists}]
+  containers:
+  - name: loader
+    image: alpine:3.22
+    command: [sleep, "86400"]
+    securityContext: {privileged: true}
+    volumeMounts: [{name: containerd, mountPath: /run/containerd/containerd.sock}]
+  volumes:
+  - {name: containerd, hostPath: {path: /run/containerd/containerd.sock, type: Socket}}
+YAML
+  k -n "$ns" wait --for=condition=Ready "pod/$loader" --timeout=10m >/dev/null
+  k -n "$ns" exec "$loader" -- apk add --no-cache --quiet containerd-ctr
+  k -n "$ns" cp "$tar" "$loader:/tmp/harness.tar"
+  k -n "$ns" exec "$loader" -- ctr -n k8s.io images import /tmp/harness.tar >/dev/null
+  k -n "$ns" delete pod "$loader" --wait=true >/dev/null
 done
+rm -f -- "$tar"
 ok "$harness on every node"
 
 k apply -f - >/dev/null <<YAML

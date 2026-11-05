@@ -30,6 +30,14 @@ spec:
       # Pods, their Services and their Secrets are named <release>-N, and each founder's reach is
       # its Service's name: keep this "mantle".
       releaseName: mantle
+      valuesObject:
+        # Each founder needs a Kubernetes node of its own (the chart's required anti-affinity), and
+        # Docker Desktop's kind cluster has a control plane and two workers: the third founder runs
+        # on the control plane, whose NoSchedule taint the founders tolerate.
+        tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
   destination:
     server: https://kubernetes.default.svc
     namespace: mantle

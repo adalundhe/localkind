@@ -13,7 +13,7 @@
 #   scripts/apps/mantle-init.sh       make the cell and set its Secrets; refuses if they exist
 #
 #   MANTLE_IMAGE     the image to run mantle from   (default: $DOCKER_USER/mantle:latest)
-#   MANTLE_FOUNDERS  the cell's founders; needs that many workers (required anti-affinity)   (default: 3)
+#   MANTLE_FOUNDERS  the cell's founders; needs that many nodes (required anti-affinity)   (default: 3)
 #   MANTLE_RESERVE   bytes this Mac keeps free   (default: 40G)
 #   MANTLE_VOLUME    each founder's volume, bytes or with a K, M, G or T suffix   (default: this
 #                    Mac's free space less MANTLE_RESERVE, a third each: the cluster's disks are a
@@ -32,8 +32,10 @@ if k -n "$ns" get secret "$release-0-founder" >/dev/null 2>&1; then
   ok "mantle's founders have their Secrets already: nothing to do (a new cell needs the old one's claims and Secrets removed first)"
   exit 0
 fi
-workers="$(k get nodes --no-headers -l '!node-role.kubernetes.io/control-plane' | wc -l | tr -d ' ')"
-[ "$workers" -ge "$founders" ] || die "mantle needs $founders workers (one founder each, required anti-affinity); this cluster has $workers"
+# A founder to a node (required anti-affinity), the control plane's taint tolerated by the app's
+# values (argocd/apps/mantle.yaml), so every node of the cluster can hold one.
+nodes="$(k get nodes --no-headers | wc -l | tr -d ' ')"
+[ "$nodes" -ge "$founders" ] || die "mantle needs $founders nodes (one founder each, required anti-affinity); this cluster has $nodes"
 
 bytes() {
   case "$1" in
