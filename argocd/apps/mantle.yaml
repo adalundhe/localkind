@@ -38,6 +38,12 @@ spec:
         - key: node-role.kubernetes.io/control-plane
           operator: Exists
           effect: NoSchedule
+        # Docker Desktop's VM has 18 CPUs and 94 GiB: three founders at 4 CPUs each leave 6 for the
+        # platform and the harness, and the measured floor of 0.88 GB at a 2 GiB allowance (mantle's
+        # docs/design/kubernetes.md §5) is far inside 4 GiB. Requests equal limits, as the chart states.
+        resources:
+          cpu: 4
+          memory: 4Gi
   destination:
     server: https://kubernetes.default.svc
     namespace: mantle
