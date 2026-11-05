@@ -16,6 +16,8 @@
 #   MANTLE_SMALL    the small sets, comma-separated   (default: 100000,10000,1000)
 #   MANTLE_LARGE    the large objects' sizes   (default: 10G)
 #   MANTLE_RESERVE  bytes this Mac keeps free, its floor, which the run is stopped at   (default: 30G)
+#   MANTLE_SEED     the run's seed, which names its buckets: a cell that kept an earlier run's
+#                   buckets takes another   (default: 1)
 . "$(dirname "$0")/../lib.sh"
 need kubectl
 need docker
@@ -24,6 +26,7 @@ mantle_dir="${MANTLE_DIR:-$ROOT/../mantle}"
 small="${MANTLE_SMALL:-100000,10000,1000}"
 large="${MANTLE_LARGE:-10G}"
 reserve="${MANTLE_RESERVE:-30G}"
+seed="${MANTLE_SEED:-1}"
 ns=mantle
 release=mantle
 harness=mantle-harness:local
@@ -162,7 +165,7 @@ spec:
       - name: harness
         image: $harness
         imagePullPolicy: Never
-        command: [mantle, bench, transfer, /runs/scale, --cell, /cell, --small, "$small", --large, "$large", --disrupt, "sh /chaos/kill-each.sh $ns"]
+        command: [mantle, bench, transfer, /runs/scale, --cell, /cell, --small, "$small", --large, "$large", --seed, "$seed", --disrupt, "sh /chaos/kill-each.sh $ns"]
         volumeMounts:
         - {name: cell, mountPath: /cell}
         - {name: runs, mountPath: /runs}
@@ -173,7 +176,7 @@ spec:
       - {name: runs, emptyDir: {}}
       - {name: chaos, configMap: {name: mantle-chaos}}
 YAML
-ok "the scale Job runs: small $small, large $large"
+ok "the scale Job runs: small $small, large $large, seed $seed"
 
 # This Mac's free space, watched for the run's length, against its reserve: below it the Job is
 # stopped, and the run fails.
