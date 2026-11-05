@@ -116,6 +116,8 @@ data:
     for n in 0 1 2; do
       pod="$release-\$n"
       before="\$(kubectl -n "\$namespace" get pod "\$pod" -o jsonpath='{.metadata.uid}')"
+      # A PodChaos an earlier run left would take this one's apply as unchanged and kill nothing.
+      kubectl -n "\$namespace" delete podchaos "kill-\$pod" --ignore-not-found --wait=true
       kubectl -n "\$namespace" apply -f - <<CHAOS
     apiVersion: chaos-mesh.org/v1alpha1
     kind: PodChaos
