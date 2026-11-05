@@ -15,7 +15,7 @@
 #                   builds the harness's image   (default: ../mantle)
 #   MANTLE_SMALL    the small sets, comma-separated   (default: 100000,10000,1000)
 #   MANTLE_LARGE    the large objects' sizes   (default: 10G)
-#   MANTLE_RESERVE  bytes this Mac keeps free   (default: 40G)
+#   MANTLE_RESERVE  bytes this Mac keeps free, its floor, which the run is stopped at   (default: 30G)
 . "$(dirname "$0")/../lib.sh"
 need kubectl
 need docker
@@ -23,7 +23,7 @@ need docker
 mantle_dir="${MANTLE_DIR:-$ROOT/../mantle}"
 small="${MANTLE_SMALL:-100000,10000,1000}"
 large="${MANTLE_LARGE:-10G}"
-reserve="${MANTLE_RESERVE:-40G}"
+reserve="${MANTLE_RESERVE:-30G}"
 ns=mantle
 release=mantle
 harness=mantle-harness:local

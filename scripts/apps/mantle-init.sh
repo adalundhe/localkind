@@ -14,17 +14,22 @@
 #
 #   MANTLE_IMAGE     the image to run mantle from   (default: $DOCKER_USER/mantle:latest)
 #   MANTLE_FOUNDERS  the cell's founders; needs that many nodes (required anti-affinity)   (default: 3)
-#   MANTLE_RESERVE   bytes this Mac keeps free   (default: 40G)
+#   MANTLE_RESERVE   bytes this Mac keeps free, its floor   (default: 30G)
+#   MANTLE_HEADROOM  bytes a run takes past its volumes: the 11.1 GB of transient writes measured past
+#                    a filling 100 GiB run's volumes on this Mac (mantle's
+#                    docs/measurements/2026-10-28-transfer-scale.md), rounded up, and 10 GiB for other
+#                    sessions' writes   (default: 21G)
 #   MANTLE_VOLUME    each founder's volume, bytes or with a K, M, G or T suffix   (default: this
-#                    Mac's free space less MANTLE_RESERVE, a third each: the cluster's disks are a
-#                    sparse file on it, far larger than what it can hold)
+#                    Mac's free space less MANTLE_RESERVE and MANTLE_HEADROOM, a third each: the
+#                    cluster's disks are a sparse file on it, far larger than what it can hold)
 . "$(dirname "$0")/../lib.sh"
 need kubectl
 need docker
 
 image="${MANTLE_IMAGE:-$DOCKER_USER/mantle:latest}"
 founders="${MANTLE_FOUNDERS:-3}"
-reserve="${MANTLE_RESERVE:-40G}"
+reserve="${MANTLE_RESERVE:-30G}"
+headroom="${MANTLE_HEADROOM:-21G}"
 ns=mantle
 release=mantle
 
@@ -50,8 +55,8 @@ if [ -n "${MANTLE_VOLUME:-}" ]; then
   volume="$(bytes "$MANTLE_VOLUME")"
 else
   free=$(( $(df -k "$HOME" | awk 'NR == 2 { print $4 }') << 10 ))
-  keep="$(bytes "$reserve")"
-  [ "$free" -gt "$keep" ] || die "this Mac has $free bytes free, no more than the $keep it keeps"
+  keep=$(( $(bytes "$reserve") + $(bytes "$headroom") ))
+  [ "$free" -gt "$keep" ] || die "this Mac has $free bytes free, no more than the $keep it keeps and a run takes past its volumes"
   volume=$(( (free - keep) / founders ))
 fi
 log "Each founder's volume: $volume bytes"
