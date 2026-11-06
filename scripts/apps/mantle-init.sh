@@ -4,8 +4,10 @@
 # The mantle chart installs each founder's identity and keys from a Secret, <release>-N-founder, and
 # never generates one: a founder's certificate is its node id's anchor and every peer pins it
 # (mantle's docs/design/kubernetes.md §3). This makes the cell with mantle's own `mantle init`, run
-# from the image Concourse published, each founder reached at its pod's Service's name, the
-# harness's gateway pinned in every founder (`mantle init gateway`), and sets each founder's pack
+# from the image Concourse published, each founder reached at its pod's own name under the
+# StatefulSet's headless Service (its pod's address, which each peer looks up again when its link
+# ends: mantle's research/78), the harness's gateway pinned in every founder (`mantle init
+# gateway`), and sets each founder's pack
 # (`mantle pack`) as its Secret, and the cell's own pack as mantle-harness-cell for the transfer
 # harness's Job. Key material goes from a 0700 temp dir straight into the cluster, never into this
 # repo. (It is visible to anyone who can read Secrets in the mantle namespace.)
@@ -65,7 +67,8 @@ tmp="$(mktemp -d)"; chmod 700 "$tmp"; trap 'rm -rf "$tmp"' EXIT
 mantle() { docker run --rm --user "$(id -u):$(id -g)" --volume "$tmp:/work" "$image" "$@"; }
 args=(init /work/cell --max-nodes "$founders" --max-volumes "$founders")
 for n in $(seq 0 $(( founders - 1 ))); do
-  args+=(--node "quic=0.0.0.0:7000,plane=0.0.0.0:7001,s3=0.0.0.0:7480,reach=$release-$n.$ns.svc.cluster.local,name=$release-$n.$ns.svc.cluster.local,name=$release-s3.$ns.svc.cluster.local,domain=node-$n,volume=/volume:$volume")
+  pod="$release-$n.$release.$ns.svc.cluster.local"
+  args+=(--node "quic=0.0.0.0:7000,plane=0.0.0.0:7001,s3=0.0.0.0:7480,reach=$pod,name=$pod,name=$release-s3.$ns.svc.cluster.local,domain=node-$n,volume=/volume:$volume")
 done
 log "Making the cell with $image"
 mantle "${args[@]}" > "$tmp/init.txt"
